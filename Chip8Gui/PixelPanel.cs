@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Diagnostics;
+using System.DirectoryServices.ActiveDirectory;
 using System.Drawing.Drawing2D;
 
 namespace Chip8Gui
@@ -54,13 +56,15 @@ namespace Chip8Gui
         {
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
+            Color green3 = Color.FromArgb(255, 51, 255, 51);
+            SolidBrush greenBrush = new SolidBrush(green3);
             for (int r = 0; r < rowCount; r++)
             {
                 for (int c = 0; c < colCount; c++)
                 {
-                    Brush brush = pixels[r, c].On ? Brushes.White : Brushes.Black;
+                    Brush brush = pixels[r, c].On ? greenBrush : Brushes.Black;
                     e.Graphics.FillRectangle(brush, pixels[r, c].Bounds);
-                    //e.Graphics.DrawRectangle(new Pen(brush), pixels[r, c].Bounds);
+                    e.Graphics.DrawRectangle(new Pen(brush), pixels[r, c].Bounds);
                 }
             }
 

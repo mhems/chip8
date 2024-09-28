@@ -25,6 +25,15 @@
     <None Update="4-flags.ch8">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Update="5-quirks.ch8">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="6-keypad.ch8">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+    <None Update="7-beep.ch8">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
     <None Update="test_opcode.ch8">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>

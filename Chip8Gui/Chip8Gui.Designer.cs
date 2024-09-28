@@ -52,6 +52,7 @@
             Text = "Form1";
             KeyDown += HandleKeyDown;
             KeyUp += HandleKeyUp;
+            KeyPreview = true;
             ResumeLayout(false);
         }
 

@@ -1,6 +1,8 @@
 using emulator;
+using System.ComponentModel.Design.Serialization;
 using System.Diagnostics;
 using System.Media;
+using static emulator.IChip8View;
 
 namespace Chip8Gui
 {
@@ -11,10 +13,24 @@ namespace Chip8Gui
         public event EventHandler<IChip8View.ProgramLoadedEventArgs>? ProgramLoaded;
 
         private const int PIXEL_SIZE = 20;
-        private readonly Keys[] keyboard = [
-            Keys.Q, Keys.W, Keys.E, Keys.R,
-            Keys.A, Keys.S, Keys.D, Keys.F,
-            Keys.Z, Keys.X, Keys.C, Keys.V];
+        private readonly Dictionary<Keys, byte> keyMap = new() {
+            {Keys.D1, 0x1},
+            {Keys.D2, 0x2},
+            {Keys.D3, 0x3},
+            {Keys.D4, 0xC},
+            {Keys.Q,  0x4},
+            {Keys.W,  0x5},
+            {Keys.E,  0x6},
+            {Keys.R,  0xD},
+            {Keys.A,  0x7},
+            {Keys.S,  0x8},
+            {Keys.D,  0x9},
+            {Keys.F,  0xE},
+            {Keys.Z,  0xA},
+            {Keys.X,  0x0},
+            {Keys.C,  0xB},
+            {Keys.V,  0xF}
+        };
         private readonly PixelPanel pixelPanel;
 
         private bool playSound;
@@ -31,8 +47,8 @@ namespace Chip8Gui
             this.Width = pixelPanel.Width + 50;
             this.Height = pixelPanel.Height + 50;
 
-            Thread t = new(SoundLoop);
-            t.Start();
+            //Thread t = new(SoundLoop);
+            //t.Start();
         }
 
         public void UpdateScreen(ulong[] screen)
@@ -47,25 +63,22 @@ namespace Chip8Gui
 
         public void HandleKeyUp(object sender, KeyEventArgs e)
         {
-            for (int i = 0; i < keyboard.Length; i++)
-            {
-                if (keyboard[i] == e.KeyCode)
-                {
-                    Task.Run(() => KeyBoardKeyUp?.Invoke(this, new IChip8View.KeyChangedEventArgs((byte)i)));
-                    break;
-                }
-            }
+            //Trace.WriteLine($"key up {e.KeyCode}");
+            HandleKeyToggle(e.KeyCode, KeyBoardKeyUp);
         }
 
         public void HandleKeyDown(object sender, KeyEventArgs e)
         {
-            for (int i = 0; i < keyboard.Length; i++)
+            //Trace.WriteLine($"key down {e.KeyCode}");
+            HandleKeyToggle(e.KeyCode, KeyBoardKeyDown);
+
+        }
+
+        private void HandleKeyToggle(Keys keyCode, EventHandler<KeyChangedEventArgs>? toInvoke)
+        {
+            if (keyMap.TryGetValue(keyCode, out byte value))
             {
-                if (keyboard[i] == e.KeyCode)
-                {
-                    Task.Run(() => KeyBoardKeyDown?.Invoke(this, new IChip8View.KeyChangedEventArgs((byte)i)));
-                    break;
-                }
+                Task.Run(() => toInvoke?.Invoke(this, new KeyChangedEventArgs(value)));
             }
         }
 
@@ -84,8 +97,8 @@ namespace Chip8Gui
 
         private void ExecuteButton_Click(object sender, EventArgs e)
         {
-            string s = "4-flags.ch8";
-            ProgramLoaded?.Invoke(this, new IChip8View.ProgramLoadedEventArgs(s));
+            string s = "6-keypad.ch8";
+            Task.Run(() => ProgramLoaded?.Invoke(this, new IChip8View.ProgramLoadedEventArgs(s)));
         }
     }
 }

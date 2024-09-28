@@ -293,41 +293,35 @@ namespace emulator
             byte y = (byte)(registers[args[1]] & (screenHeight - 1));
             byte n = (byte)(args[2] & 0xff);
             ushort i = I;
-            var data = memory[i..(i + n)];
-            if (n == 4 && data[0] == 0x0 && data[1] == 0xa0 && data[2] == 0x40 && data[3] == 0xa0)
-            {
-                Trace.WriteLine("");
-            }
-            if (n == 3 && data[0] == 0xa0 && data[1] == 0x40 && data[2] == 0xa0)
-            {
-                Trace.WriteLine("");
-            }
-            Trace.WriteLine($"  DRAW x={x} y={y} n={n} data={string.Join(", ", data.Select(d => $"0x{d:x}"))}");
             registers[0xf] = 0;
-            byte shiftAmount = (byte)(screenWidth - x - 8);
-            for (int r = y; r < y + n; r++)
+            byte leftShiftAmount = (byte)(screenWidth - x - 8);
+            byte rightShiftAmount = 0;
+            if (x > 55)
             {
-                ulong mask = (ulong)0xff << shiftAmount;
+                leftShiftAmount = 0;
+                rightShiftAmount = (byte)(x - 56);
+            }
+            ulong mask = (ulong)0xff << leftShiftAmount;
+            for (int r = y; r < Math.Min(y + n, screenHeight); r++)
+            {
                 ulong original = vram[r] & mask;
-                ulong to_draw = (ulong)memory[i] << shiftAmount;
+                ulong to_draw = (ulong)(memory[i] >> rightShiftAmount) << leftShiftAmount;
                 if ((original & to_draw) != 0)
                 {
                     registers[0xf] = 1;
-                   // Trace.WriteLine($"  COLLISION");
                 }
                 vram[r] = (vram[r] & ~mask) | (original ^ to_draw);
                 i++;
             }
             OnScreenChanged();
             programCounter += 2;
-            //Thread.Sleep(1000); // mark
         }
         #endregion
 
         #region key presses
         private void SkipKeyDown(ushort[] args)
         {
-            if (keys[args[0]])
+            if (keys[registers[args[0]]])
             {
                 programCounter += 4;
             }
@@ -339,7 +333,7 @@ namespace emulator
 
         private void SkipKeyUp(ushort[] args)
         {
-            if (!keys[args[0]])
+            if (!keys[registers[args[0]]])
             {
                 programCounter += 4;
             }
@@ -352,10 +346,12 @@ namespace emulator
         private void Input(ushort[] args)
         {
             mostRecentKeyDown = null;
+            Trace.WriteLine("waiting for input...");
             while (!mostRecentKeyDown.HasValue)
             {
-                Thread.Sleep(500);
+                Thread.Sleep(10);
             }
+            Trace.WriteLine($"v{args[0]} ({registers[args[0]]}) <- key 0x{mostRecentKeyDown.Value:X}");
             registers[args[0]] = mostRecentKeyDown.Value;
         }
         #endregion
@@ -505,7 +501,10 @@ namespace emulator
             Reset();
 
             timer.Start();
+            
+            //memory[0x1ff] = 1;
 
+            uint n = 0;
             while (programCounter < memorySize)
             {
                 ushort value = CurrentInstruction;
@@ -516,10 +515,11 @@ namespace emulator
                 }
 
                 Instruction instruction = new(value);
-                Trace.WriteLine($"PC = 0x{programCounter:X}, {instruction.Code}");
+                //Trace.WriteLine($"{n}: PC = 0x{programCounter:X}, {instruction.Code}");
                 functionMap[instruction.OpCode](instruction.Arguments);
 
-                Thread.Sleep(100);
+                n++;
+                //Thread.Sleep(10);
             }
 
             timer.Stop();
@@ -571,8 +571,10 @@ namespace emulator
             ulong[] copy = new ulong[vram.Length];
             Array.Copy(vram, copy, vram.Length);
 
-            ScreenUpdated?.Invoke(this, new ScreenEvent(copy));
-            //Task.Run(() => ScreenUpdated?.Invoke(this, new ScreenEvent(copy)));
+            Task.Run(() =>
+            {
+                ScreenUpdated?.Invoke(this, new ScreenEvent(copy));
+            });
         }
 
         #region events
