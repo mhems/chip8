@@ -284,7 +284,6 @@ namespace emulator
             Array.Clear(vram);
             programCounter += 2;
             OnScreenChanged();
-          //  Trace.WriteLine("  CLEAR");
         }
 
         private void Draw(ushort[] args)
@@ -346,13 +345,12 @@ namespace emulator
         private void Input(ushort[] args)
         {
             mostRecentKeyDown = null;
-            Trace.WriteLine("waiting for input...");
             while (!mostRecentKeyDown.HasValue)
             {
                 Thread.Sleep(10);
             }
-            Trace.WriteLine($"v{args[0]} ({registers[args[0]]}) <- key 0x{mostRecentKeyDown.Value:X}");
             registers[args[0]] = mostRecentKeyDown.Value;
+            programCounter += 2;
         }
         #endregion
 
@@ -408,7 +406,6 @@ namespace emulator
             memory[I + 0] = (byte)(value / 100);
             memory[I + 1] = (byte)((value % 100) / 10);
             memory[I + 2] = (byte)(value % 10);
-            Trace.WriteLine($"{value} -> {memory[I]} {memory[I + 1]} {memory[I + 2]}");
             programCounter += 2;
         }
 
@@ -444,7 +441,7 @@ namespace emulator
 
             keys[keyCode] = pressed;
 
-            if (pressed)
+            if (!pressed) // wait for release
             {
                 mostRecentKeyDown = keyCode;
             }
@@ -501,8 +498,6 @@ namespace emulator
             Reset();
 
             timer.Start();
-            
-            //memory[0x1ff] = 1;
 
             uint n = 0;
             while (programCounter < memorySize)
@@ -515,11 +510,10 @@ namespace emulator
                 }
 
                 Instruction instruction = new(value);
-                //Trace.WriteLine($"{n}: PC = 0x{programCounter:X}, {instruction.Code}");
+               // Trace.WriteLine($"{n}: PC = 0x{programCounter:X}, {instruction.Code}");
                 functionMap[instruction.OpCode](instruction.Arguments);
 
                 n++;
-                //Thread.Sleep(10);
             }
 
             timer.Stop();
@@ -571,10 +565,7 @@ namespace emulator
             ulong[] copy = new ulong[vram.Length];
             Array.Copy(vram, copy, vram.Length);
 
-            Task.Run(() =>
-            {
-                ScreenUpdated?.Invoke(this, new ScreenEvent(copy));
-            });
+            Task.Run(() => ScreenUpdated?.Invoke(this, new ScreenEvent(copy)));
         }
 
         #region events

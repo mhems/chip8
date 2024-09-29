@@ -57,7 +57,7 @@ namespace Chip8Gui
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
             Color green3 = Color.FromArgb(255, 51, 255, 51);
-            SolidBrush greenBrush = new SolidBrush(green3);
+            SolidBrush greenBrush = new(green3);
             for (int r = 0; r < rowCount; r++)
             {
                 for (int c = 0; c < colCount; c++)

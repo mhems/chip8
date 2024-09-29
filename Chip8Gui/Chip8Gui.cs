@@ -47,8 +47,8 @@ namespace Chip8Gui
             this.Width = pixelPanel.Width + 50;
             this.Height = pixelPanel.Height + 50;
 
-            //Thread t = new(SoundLoop);
-            //t.Start();
+            Thread t = new(SoundLoop);
+            t.Start();
         }
 
         public void UpdateScreen(ulong[] screen)
@@ -63,15 +63,12 @@ namespace Chip8Gui
 
         public void HandleKeyUp(object sender, KeyEventArgs e)
         {
-            //Trace.WriteLine($"key up {e.KeyCode}");
             HandleKeyToggle(e.KeyCode, KeyBoardKeyUp);
         }
 
         public void HandleKeyDown(object sender, KeyEventArgs e)
         {
-            //Trace.WriteLine($"key down {e.KeyCode}");
             HandleKeyToggle(e.KeyCode, KeyBoardKeyDown);
-
         }
 
         private void HandleKeyToggle(Keys keyCode, EventHandler<KeyChangedEventArgs>? toInvoke)
@@ -88,16 +85,16 @@ namespace Chip8Gui
             {
                 if (playSound)
                 {
-                    SystemSounds.Beep.Play();
+                   // SystemSounds.Beep.Play();
                 }
 
-                Thread.Sleep(3000);
+                Thread.Sleep(10);
             }
         }
 
         private void ExecuteButton_Click(object sender, EventArgs e)
         {
-            string s = "6-keypad.ch8";
+            string s = "roms\\superpong.ch8";
             Task.Run(() => ProgramLoaded?.Invoke(this, new IChip8View.ProgramLoadedEventArgs(s)));
         }
     }
