@@ -53,7 +53,6 @@ namespace emulator
 
         public event EventHandler<SoundEvent>? SoundTimerChanged;
         public event EventHandler<ScreenEvent>? ScreenUpdated;
-        public event EventHandler<TickEvent>? Ticked;
 
         public bool BitwiseResetFlags { get; set; } = true;
         public bool ShiftIgnoresY { get; set; } = false;
@@ -404,7 +403,7 @@ namespace emulator
             soundTimer = registers[args[0]];
             programCounter += 2;
 
-            if (original == 0 && soundTimer > 0)
+            if (original == 0 && soundTimer > 1)
             {
                 Task.Run(() => SoundTimerChanged?.Invoke(this, new SoundEvent(true)));
             }
@@ -500,8 +499,6 @@ namespace emulator
                     Task.Run(() => SoundTimerChanged?.Invoke(this, new SoundEvent(false)));
                 }
             }
-
-            Task.Run(() => Ticked?.Invoke(this, new TickEvent(delayTimer, soundTimer)));
         }
 
         public void LoadProgram(string romPath)
@@ -604,7 +601,7 @@ namespace emulator
             ulong[] copy = new ulong[vram.Length];
             Array.Copy(vram, copy, vram.Length);
 
-            Task.Run(() => ScreenUpdated?.Invoke(this, new ScreenEvent(copy)));
+            ScreenUpdated?.Invoke(this, new ScreenEvent(copy));
         }
 
         #region events
@@ -616,13 +613,6 @@ namespace emulator
         public class ScreenEvent(ulong[] screen) : EventArgs
         {
             public ulong[] Screen { get; private set; } = screen;
-        }
-
-        public class TickEvent(byte delay, byte sound) : EventArgs
-        {
-            public byte Delay { get; private set; } = delay;
-
-            public byte Sound { get; private set; } = sound;
         }
         #endregion
     }

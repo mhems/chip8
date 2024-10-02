@@ -61,10 +61,6 @@ namespace Chip8Gui
             playSound = soundOn;
         }
 
-        public void Draw()
-        {
-        }
-
         public void HandleKeyUp(object sender, KeyEventArgs e)
         {
             HandleKeyToggle(e.KeyCode, KeyBoardKeyUp);
@@ -98,7 +94,7 @@ namespace Chip8Gui
 
         private void ExecuteButton_Click(object sender, EventArgs e)
         {
-            string s = "roms\\3-corax+.ch8";
+            string s = "roms\\5-quirks.ch8";
             Task.Run(() => ProgramLoaded?.Invoke(this, new IChip8View.ProgramLoadedEventArgs(s)));
         }
     }

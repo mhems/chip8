@@ -42,18 +42,13 @@ namespace Chip8Gui
                 }
             }
 
-            Redraw();
-        }
-
-        public void Redraw()
-        {
             if (InvokeRequired)
             {
-                Invoke(new Action(this.Refresh));
+                Invoke(new Action(Refresh));
             }
             else
             {
-                this.Refresh();
+                Refresh();
             }
         }
 

@@ -16,8 +16,6 @@ namespace emulator
 
         public void UpdateScreen(ulong[] screen);
 
-        public void Draw();
-
         public class KeyChangedEventArgs(byte keyCode) : EventArgs
         {
             public byte KeyCode { get; private set; } = keyCode;
