@@ -22,6 +22,7 @@ namespace emulator
 
             model.SoundTimerChanged += HandleSoundChange;
             model.ScreenUpdated += HandleScreenChange;
+            model.Ticked += HandleTick;
         }
 
         private void HandleKeyUp(object? sender, IChip8View.KeyChangedEventArgs e)
@@ -38,6 +39,11 @@ namespace emulator
         {
             model.LoadProgram(e.FileName);
             model.Execute();
+        }
+
+        private void HandleTick(object? sender, Chip8.TickEvent e)
+        {
+            view.Draw();
         }
 
         private void HandleSoundChange(object? sender, Chip8.SoundEvent e)

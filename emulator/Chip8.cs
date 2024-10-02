@@ -536,8 +536,6 @@ namespace emulator
         {
             Reset();
 
-            memory[0x1ff] = 1;
-
             timer.Start();
 
             uint n = 0;
@@ -551,7 +549,7 @@ namespace emulator
                 }
 
                 Instruction instruction = new(value);
-               // Trace.WriteLine($"{n}: PC = 0x{programCounter:X}, {instruction.Code}");
+                // Trace.WriteLine($"{n}: PC = 0x{programCounter:X}, {instruction.Code}");
                 functionMap[instruction.OpCode](instruction.Arguments);
 
                 n++;

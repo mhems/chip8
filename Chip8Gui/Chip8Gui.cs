@@ -8,9 +8,9 @@ namespace Chip8Gui
 {
     public partial class Chip8Gui : Form, IChip8View
     {
-        public event EventHandler<IChip8View.KeyChangedEventArgs>? KeyBoardKeyUp;
-        public event EventHandler<IChip8View.KeyChangedEventArgs>? KeyBoardKeyDown;
-        public event EventHandler<IChip8View.ProgramLoadedEventArgs>? ProgramLoaded;
+        public event EventHandler<KeyChangedEventArgs>? KeyBoardKeyUp;
+        public event EventHandler<KeyChangedEventArgs>? KeyBoardKeyDown;
+        public event EventHandler<ProgramLoadedEventArgs>? ProgramLoaded;
 
         private const int PIXEL_SIZE = 20;
         private readonly Dictionary<Keys, byte> keyMap = new() {
@@ -48,7 +48,7 @@ namespace Chip8Gui
             this.Height = pixelPanel.Height + 50;
 
             Thread t = new(SoundLoop);
-            t.Start();
+            //t.Start();
         }
 
         public void UpdateScreen(ulong[] screen)
@@ -59,6 +59,10 @@ namespace Chip8Gui
         public void UpdateSoundState(bool soundOn)
         {
             playSound = soundOn;
+        }
+
+        public void Draw()
+        {
         }
 
         public void HandleKeyUp(object sender, KeyEventArgs e)
@@ -94,7 +98,7 @@ namespace Chip8Gui
 
         private void ExecuteButton_Click(object sender, EventArgs e)
         {
-            string s = "roms\\superpong.ch8";
+            string s = "roms\\3-corax+.ch8";
             Task.Run(() => ProgramLoaded?.Invoke(this, new IChip8View.ProgramLoadedEventArgs(s)));
         }
     }
