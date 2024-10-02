@@ -49,9 +49,16 @@ namespace emulator
 
         private readonly Dictionary<string, Action<ushort[]>> functionMap = [];
 
+        private ushort CurrentInstruction => (ushort)((memory[programCounter] << 8) | memory[programCounter + 1]);
+
         public event EventHandler<SoundEvent>? SoundTimerChanged;
         public event EventHandler<ScreenEvent>? ScreenUpdated;
-        private ushort CurrentInstruction => (ushort)((memory[programCounter] << 8) | memory[programCounter + 1]);
+        public event EventHandler<TickEvent>? Ticked;
+
+        public bool BitwiseResetFlags { get; set; } = true;
+        public bool ShiftIgnoresY { get; set; } = false;
+        public bool JumpUsesV0 { get; set; } = true;
+        public bool MemoryIncrementsI { get; set; } = true;
 
         public Chip8()
         {
@@ -141,18 +148,30 @@ namespace emulator
         private void Or(ushort[] args)
         {
             registers[args[0]] |= registers[args[1]];
+            if (BitwiseResetFlags)
+            {
+                registers[0xf] = 0;
+            }
             programCounter += 2;
         }
 
         private void And(ushort[] args)
         {
             registers[args[0]] &= registers[args[1]];
+            if (BitwiseResetFlags)
+            {
+                registers[0xf] = 0;
+            }
             programCounter += 2;
         }
 
         private void Xor(ushort[] args)
         {
             registers[args[0]] ^= registers[args[1]];
+            if (BitwiseResetFlags)
+            {
+                registers[0xf] = 0;
+            }
             programCounter += 2;
         }
 
@@ -185,16 +204,18 @@ namespace emulator
 
         private void RightShift(ushort[] args)
         {
-            byte flag = (byte)((registers[args[1]] & 0x01) != 0 ? 1 : 0);
-            registers[args[0]] = (byte)((registers[args[1]] >> 1) & 0xff);
+            int reg_index = ShiftIgnoresY ? 0 : 1;
+            byte flag = (byte)((registers[args[reg_index]] & 0x01) != 0 ? 1 : 0);
+            registers[args[0]] = (byte)((registers[args[reg_index]] >> 1) & 0xff);
             registers[0xf] = flag;
             programCounter += 2;
         }
 
         private void LeftShift(ushort[] args)
         {
-            byte flag = (byte)((registers[args[1]] & 0x80) != 0 ? 1 : 0);
-            registers[args[0]] = (byte)((registers[args[1]] << 1) & 0xff);
+            int reg_index = ShiftIgnoresY ? 0 : 1;
+            byte flag = (byte)((registers[args[reg_index]] & 0x80) != 0 ? 1 : 0);
+            registers[args[0]] = (byte)((registers[args[reg_index]] << 1) & 0xff);
             registers[0xf] = flag;
             programCounter += 2;
         }
@@ -220,7 +241,17 @@ namespace emulator
 
         private void JumpAdditive(ushort[] args)
         {
-            programCounter = (ushort)((registers[0] + args[0]) & 0xFFF);
+            byte arg;
+            if (JumpUsesV0)
+            {
+                arg = registers[0];
+            }
+            else
+            {
+                byte index = (byte)((args[0] & 0xF00) >> 8);
+                arg = registers[index];
+            }
+            programCounter = (ushort)((arg + args[0]) & 0xFFF);
         }
 
         private void Call(ushort[] args)
@@ -415,7 +446,10 @@ namespace emulator
             {
                 memory[I + i] = registers[i];
             }
-            I += (ushort)(args[0] + 1);
+            if (MemoryIncrementsI)
+            {
+                I += (ushort)(args[0] + 1);
+            }
             programCounter += 2;
         }
 
@@ -425,7 +459,10 @@ namespace emulator
             {
                 registers[i] = memory[I + i];
             }
-            I += (ushort)(args[0] + 1);
+            if (MemoryIncrementsI)
+            {
+                I += (ushort)(args[0] + 1);
+            }
             programCounter += 2;
         }
         #endregion
@@ -463,6 +500,8 @@ namespace emulator
                     Task.Run(() => SoundTimerChanged?.Invoke(this, new SoundEvent(false)));
                 }
             }
+
+            Task.Run(() => Ticked?.Invoke(this, new TickEvent(delayTimer, soundTimer)));
         }
 
         public void LoadProgram(string romPath)
@@ -496,6 +535,8 @@ namespace emulator
         public void Execute()
         {
             Reset();
+
+            memory[0x1ff] = 1;
 
             timer.Start();
 
@@ -577,6 +618,13 @@ namespace emulator
         public class ScreenEvent(ulong[] screen) : EventArgs
         {
             public ulong[] Screen { get; private set; } = screen;
+        }
+
+        public class TickEvent(byte delay, byte sound) : EventArgs
+        {
+            public byte Delay { get; private set; } = delay;
+
+            public byte Sound { get; private set; } = sound;
         }
         #endregion
     }
