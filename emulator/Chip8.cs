@@ -26,6 +26,7 @@ namespace emulator
         private byte delayTimer, soundTimer;
         private ushort programCounter;
         private readonly Random random = new();
+        private bool running = false;
 
         private readonly byte[][] sprites =
         [
@@ -524,7 +525,7 @@ namespace emulator
             {
                 throw new ArgumentException("program is too big to fit in memory");
             }
-
+            running = false;
             Array.Clear(memory, startAddress, memory.Length - startAddress);
             Array.Copy(data, 0, memory, startAddress, data.Length);
         }
@@ -535,8 +536,10 @@ namespace emulator
 
             timer.Start();
 
+            running = true;
+
             uint n = 0;
-            while (programCounter < memorySize)
+            while (running && programCounter < memorySize)
             {
                 ushort value = CurrentInstruction;
 

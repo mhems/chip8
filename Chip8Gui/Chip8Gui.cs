@@ -1,5 +1,6 @@
 using emulator;
 using System.ComponentModel.Design.Serialization;
+using System.Data;
 using System.Diagnostics;
 using System.Media;
 using static emulator.IChip8View;
@@ -11,6 +12,8 @@ namespace Chip8Gui
         public event EventHandler<KeyChangedEventArgs>? KeyBoardKeyUp;
         public event EventHandler<KeyChangedEventArgs>? KeyBoardKeyDown;
         public event EventHandler<ProgramLoadedEventArgs>? ProgramLoaded;
+        public event EventHandler<EventArgs>? ProgramStarted;
+        public event EventHandler<ConfigChangedEventArgs>? ConfigChanged;
 
         private const int PIXEL_SIZE = 20;
         private readonly Dictionary<Keys, byte> keyMap = new() {
@@ -43,9 +46,11 @@ namespace Chip8Gui
                 Height = 32 * PIXEL_SIZE + 50,
                 Width = 64 * PIXEL_SIZE + 50,
             };
+            this.offColorPanel.BackColor = pixelPanel.OffColor;
+            this.onColorPanel.BackColor = pixelPanel.OnColor;
             this.Controls.Add(pixelPanel);
-            this.Width = pixelPanel.Width + 50;
-            this.Height = pixelPanel.Height + 50;
+           // this.Width = pixelPanel.Width + 50;
+            //this.Height = pixelPanel.Height + 50;
 
             Thread t = new(SoundLoop);
             //t.Start();
@@ -85,7 +90,7 @@ namespace Chip8Gui
             {
                 if (playSound)
                 {
-                   // SystemSounds.Beep.Play();
+                    // SystemSounds.Beep.Play();
                 }
 
                 Thread.Sleep(10);
@@ -94,8 +99,89 @@ namespace Chip8Gui
 
         private void ExecuteButton_Click(object sender, EventArgs e)
         {
-            string s = "roms\\5-quirks.ch8";
-            Task.Run(() => ProgramLoaded?.Invoke(this, new IChip8View.ProgramLoadedEventArgs(s)));
+            pixelPanel.Clear();
+            jumpV0Checkbox.Enabled = false;
+            memoryIncrementsCheckbox.Enabled = false;
+            bitwiseResetCheckbox.Enabled = false;
+            shiftIgnoresYCheckbox.Enabled = false;
+            Task.Run(() => ProgramStarted?.Invoke(this, new EventArgs()));
+        }
+
+        private void OffButton_Click(object sender, EventArgs e)
+        {
+            Color color = PromptColor(offColorPanel.BackColor);
+            offColorPanel.BackColor = color;
+            pixelPanel.OffColor = color;
+        }
+
+        private void OnButton_Click(object sender, EventArgs e)
+        {
+            Color color = PromptColor(onColorPanel.BackColor);
+            onColorPanel.BackColor = color;
+            pixelPanel.OnColor = color;
+        }
+
+        private static Color PromptColor(Color initial)
+        {
+            ColorDialog dialog = new()
+            {
+                ShowHelp = true,
+                Color = initial,
+                AllowFullOpen = false,
+            };
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                return dialog.Color;
+            }
+
+            return initial;
+        }
+
+        private void ShiftIgnoresYCheckbox_CheckedChanged(object sender, EventArgs e)
+        {
+            ConfigChanged?.Invoke(this,
+                new ConfigChangedEventArgs(Chip8Presenter.ShiftIgnoresYOption,
+                    shiftIgnoresYCheckbox.Checked));
+        }
+
+        private void JumpV0Checkbox_CheckedChanged(object sender, EventArgs e)
+        {
+            ConfigChanged?.Invoke(this,
+                new ConfigChangedEventArgs(Chip8Presenter.JumpUsesV0Option,
+                    jumpV0Checkbox.Checked));
+        }
+
+        private void BitwiseResetCheckbox_CheckedChanged(object sender, EventArgs e)
+        {
+            ConfigChanged?.Invoke(this,
+                new ConfigChangedEventArgs(Chip8Presenter.BitwiseResetsVfOption,
+                    bitwiseResetCheckbox.Checked));
+        }
+
+        private void MemoryIncrementsCheckbox_CheckedChanged(object sender, EventArgs e)
+        {
+            ConfigChanged?.Invoke(this,
+                new ConfigChangedEventArgs(Chip8Presenter.MemoryIncrementsIOption,
+                    memoryIncrementsCheckbox.Checked));
+        }
+
+        private void LoadProgramButton_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog dialog = new()
+            {
+                CheckFileExists = true,
+                CheckPathExists = true,
+                Filter = "Chip8 ROMs (*.ch8)|*.ch8|All Files (*.*)|*.*",
+                InitialDirectory = AppDomain.CurrentDomain.BaseDirectory + "\\roms",
+            };
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                string filepath = new FileInfo(dialog.FileName).FullName;
+                loadedRomLabel.Text = Path.GetFileNameWithoutExtension(filepath);
+                Task.Run(() => ProgramLoaded?.Invoke(this, new ProgramLoadedEventArgs(filepath)));
+            }
         }
     }
 }

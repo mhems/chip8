@@ -11,6 +11,8 @@ namespace emulator
         public event EventHandler<KeyChangedEventArgs> KeyBoardKeyUp;
         public event EventHandler<KeyChangedEventArgs> KeyBoardKeyDown;
         public event EventHandler<ProgramLoadedEventArgs> ProgramLoaded;
+        public event EventHandler<EventArgs> ProgramStarted;
+        public event EventHandler<ConfigChangedEventArgs> ConfigChanged;
 
         public void UpdateSoundState(bool soundOn);
 
@@ -24,6 +26,12 @@ namespace emulator
         public class ProgramLoadedEventArgs(string filename) : EventArgs
         {
             public string FileName { get; private set; } = filename;
+        }
+
+        public class ConfigChangedEventArgs(string option, bool value) : EventArgs
+        {
+            public string Option { get; private set; } = option;
+            public bool Value { get; private set; } = value;
         }
     }
 }
