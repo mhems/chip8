@@ -49,8 +49,6 @@ namespace Chip8Gui
             this.offColorPanel.BackColor = pixelPanel.OffColor;
             this.onColorPanel.BackColor = pixelPanel.OnColor;
             this.Controls.Add(pixelPanel);
-           // this.Width = pixelPanel.Width + 50;
-            //this.Height = pixelPanel.Height + 50;
 
             Thread t = new(SoundLoop);
             //t.Start();
