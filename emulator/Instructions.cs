@@ -178,7 +178,7 @@ namespace emulator
             ("00E0", "CLR"), 
             ("00EE", "RET"), 
             ("1NNN", "JMPI"),
-            ("2NNN", "CAL"), 
+            ("2NNN", "CALL"), 
             ("3XNN", "SEQI"),
             ("4XNN", "SNEI"),
             ("5XY0", "SEQ"), 

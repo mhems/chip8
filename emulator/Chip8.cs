@@ -7,15 +7,14 @@ namespace emulator
 {
     public class Chip8
     {
-        private const uint memorySize = 4096;
-        private const ushort startAddress = 0x200;
-        private const ushort fontBaseAddress = 0x0;
-        private const byte screenWidth = 64;
-        private const byte screenHeight = 32;
+        public const uint MEMORY_SIZE_BYTES = 4096;
+        public const ushort PROGRAM_START_ADDRESS = 0x200;
+        public const ushort FONT_BASE_ADDRESS = 0x0;
+        public const byte SCREEN_WIDTH = 64;
+        public const byte SCREEN_HEIGHT = 32;
+        public const byte TIMER_FREQUENCY_HZ = 60;
 
         private readonly System.Timers.Timer timer;
-        private const byte timerFrequencyHz = 60;
-
         private readonly byte[] registers = new byte[16];
         private readonly Stack<ushort> programStack = new();
         private readonly bool[] keys = new bool[16];
@@ -62,9 +61,9 @@ namespace emulator
 
         public Chip8()
         {
-            memory = new byte[memorySize];
-            vram = new ulong[screenHeight];
-            timer = new(1000 / timerFrequencyHz)
+            memory = new byte[MEMORY_SIZE_BYTES];
+            vram = new ulong[SCREEN_HEIGHT];
+            timer = new(1000 / TIMER_FREQUENCY_HZ)
             {
                 AutoReset = true,
             };
@@ -119,7 +118,7 @@ namespace emulator
             {
                 for (int b = 0; b < spriteSize; b++)
                 {
-                    memory[fontBaseAddress + i * spriteSize + b] = sprites[i][b];
+                    memory[FONT_BASE_ADDRESS + i * spriteSize + b] = sprites[i][b];
                 }
             }
         }
@@ -319,12 +318,12 @@ namespace emulator
 
         private void Draw(ushort[] args)
         {
-            byte x = (byte)(registers[args[0]] & (screenWidth - 1));
-            byte y = (byte)(registers[args[1]] & (screenHeight - 1));
+            byte x = (byte)(registers[args[0]] & (SCREEN_WIDTH - 1));
+            byte y = (byte)(registers[args[1]] & (SCREEN_HEIGHT - 1));
             byte n = (byte)(args[2] & 0xff);
             ushort i = I;
             registers[0xf] = 0;
-            byte leftShiftAmount = (byte)(screenWidth - x - 8);
+            byte leftShiftAmount = (byte)(SCREEN_WIDTH - x - 8);
             byte rightShiftAmount = 0;
             if (x > 55)
             {
@@ -332,7 +331,7 @@ namespace emulator
                 rightShiftAmount = (byte)(x - 56);
             }
             ulong mask = (ulong)0xff << leftShiftAmount;
-            for (int r = y; r < Math.Min(y + n, screenHeight); r++)
+            for (int r = y; r < Math.Min(y + n, SCREEN_HEIGHT); r++)
             {
                 ulong original = vram[r] & mask;
                 ulong to_draw = (ulong)(memory[i] >> rightShiftAmount) << leftShiftAmount;
@@ -427,7 +426,7 @@ namespace emulator
 
         private void Sprite(ushort[] args)
         {
-            I = (ushort)((fontBaseAddress + args[0] * sprites[0].Length) & 0xFFF);
+            I = (ushort)((FONT_BASE_ADDRESS + args[0] * sprites[0].Length) & 0xFFF);
             programCounter += 2;
         }
 
@@ -521,13 +520,13 @@ namespace emulator
         {
             byte[] data = program.ToArray();
 
-            if (data.Length + startAddress > memorySize)
+            if (data.Length + PROGRAM_START_ADDRESS > MEMORY_SIZE_BYTES)
             {
                 throw new ArgumentException("program is too big to fit in memory");
             }
             running = false;
-            Array.Clear(memory, startAddress, memory.Length - startAddress);
-            Array.Copy(data, 0, memory, startAddress, data.Length);
+            Array.Clear(memory, PROGRAM_START_ADDRESS, memory.Length - PROGRAM_START_ADDRESS);
+            Array.Copy(data, 0, memory, PROGRAM_START_ADDRESS, data.Length);
         }
 
         public void Execute()
@@ -539,7 +538,7 @@ namespace emulator
             running = true;
 
             uint n = 0;
-            while (running && programCounter < memorySize)
+            while (running && programCounter < MEMORY_SIZE_BYTES)
             {
                 ushort value = CurrentInstruction;
 
@@ -596,7 +595,7 @@ namespace emulator
             Array.Clear(registers);
             ClearScreen([]);
             programStack.Clear();
-            programCounter = startAddress;
+            programCounter = PROGRAM_START_ADDRESS;
         }
 
         private void OnScreenChanged()

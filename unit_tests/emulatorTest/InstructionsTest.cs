@@ -66,5 +66,15 @@ namespace emulatorTest
             Assert.AreEqual(expectedOpcode, observedInstruction.OpCode);
             CollectionAssert.AreEqual(expectedArguments, observedInstruction.Arguments);
         }
+
+        [DataRow("1-chip8-logo.ch8")]
+        [DataRow("2-ibm-logo.ch8")]
+        [DataRow("3-corax+.ch8")]
+        [DataRow("4-flags.ch8")]
+        [TestMethod]
+        public void TestDisassembler(string rom)
+        {
+            Assembler.Disassemble(rom, Path.GetFileNameWithoutExtension(rom) + ".8o");
+        }
     }
 }
