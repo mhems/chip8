@@ -1,92 +1,93 @@
-﻿using System;
-using System.Timers;
-using System.Diagnostics;
-using System.Xml.Schema;
-using System.Net.Http.Headers;
-
-namespace emulator
+﻿namespace emulator
 {
-    public static class Assembler
+    public static class Disassembler
     {
         public static void Disassemble(string srcPath, string destPath)
         {
             Disassemble(File.ReadAllBytes(srcPath), destPath);
         }
 
+        public static void Disassemble(IEnumerable<byte> program, string destPath)
+        {
+            List<ushort> words = [];
+            List<byte> programData = new(program);
+            if (programData.Count % 2 == 1)
+            {
+                programData.Add(0);
+            }
+            for (int i = 0; i < programData.Count; i += 2)
+            {
+                ushort datum = (ushort)((programData[i] << 8) | programData[i + 1]);
+                words.Add(datum);
+            }
+            Disassemble(words, destPath);
+        }
+
         public static void Disassemble(IEnumerable<ushort> program, string destPath)
         {
             ushort[] programArray = program.ToArray();
 
-            Dictionary<ushort, string> functions = new();
-            HashSet<ushort> returns = new();
-            Dictionary<ushort, string> labels = new();
-            HashSet<ushort> reachable = new();
-            Stack<ushort> stack = new();
+            Dictionary<ushort, string> functions = [];
+            HashSet<ushort> returns = [];
+            Dictionary<ushort, string> labels = [];
+            HashSet<ushort> reachable = [];
+            HashSet<ushort> traced = [];
 
-#if false
-            using (StreamWriter writer = File.CreateText("output.8o"))
+            void Trace(ushort start_address)
             {
-                ushort address = Chip8.PROGRAM_START_ADDRESS;
-                foreach(ushort datum in programArray)
-                {
-                    writer.Write($"0x{address:x4}: ");
-                    try
-                    {
-                        writer.WriteLine($"{new Instruction(datum).Code}");
-                    }
-                    catch
-                    {
-                        writer.WriteLine($"0x{datum:x4}");
-                    }
-                    address += 2;
-                }
-            }
-#endif
-
-            void Trace(ushort start_address, bool label=false, bool func=false)
-            {
-                // Debug.WriteLine($"0x{start_address:x4} {label} {func}");
+                traced.Add(start_address);
                 ushort address = start_address;
                 uint index = (ushort)(address >> 1);
+                ushort target;
                 while (index < programArray.Length)
                 {
+                    Instruction instruction;
+                    try
+                    {
+                        instruction = new(programArray[index]);
+                    }
+                    catch(ArgumentException)
+                    {
+                        return;
+                    }
                     reachable.Add(address);
-                    Instruction instruction = new(programArray[index]);
-                    // Debug.WriteLine($"{address:x4} {instruction.Code}");
+
                     switch (instruction.Mnemonic)
                     {
                         case "CALL":
-                            ushort target = (ushort)(instruction.Arguments[0] - Chip8.PROGRAM_START_ADDRESS);
+                            target = (ushort)(instruction.Arguments[0] - Chip8.PROGRAM_START_ADDRESS);
                             if (!functions.ContainsKey(target))
                             {
                                 functions.Add(target, $"func{functions.Count + 1}");
-                                stack.Push(address);
-                                Trace(target, label = false, func = true);
-                                address = stack.Pop();
-                                // Debug.WriteLine($"returned from tracing CALL, address=0x{address:x4}");
+                                Trace(target);
                             }
                             break;
                         case "RET":
-                            if (!func)
-                            {
-                                throw new Exception("illegal return from non-function context");
-                            }
                             returns.Add(address);
                             return;
                         case "JMPI":
-                            labels.Add((ushort)(instruction.Arguments[0] - Chip8.PROGRAM_START_ADDRESS), $"label{labels.Count + 1}");
-                            if (instruction.Arguments[0] != address + Chip8.PROGRAM_START_ADDRESS)
+                            target = (ushort)(instruction.Arguments[0] - Chip8.PROGRAM_START_ADDRESS);
+                            if (!labels.ContainsKey(target))
                             {
-                                Trace((ushort)(instruction.Arguments[0] - Chip8.PROGRAM_START_ADDRESS), label = true, func = false);
+                                labels.Add(target, $"label{labels.Count + 1}");
+                                if (instruction.Arguments[0] != address + Chip8.PROGRAM_START_ADDRESS)
+                                {
+                                    Trace(target);
+                                }
                             }
-                            return; // jump is one-way
+                            return;
                         case "SEQI":
                         case "SNEI":
                         case "SEQ":
                         case "SNE":
                         case "SKEQ":
                         case "SKNE":
-                            // fallthrough, cannot predict which branch is taken
+                            target = (ushort)(address + 4);
+                            if (!traced.Contains(target))
+                            { 
+                                Trace(target);
+                            }
+                            break;
                         case "JMPA":
                             // fallthrough, cannot predict jump target
                         default:
@@ -143,22 +144,6 @@ namespace emulator
                     index++;
                 }
             }
-        }
-
-        public static void Disassemble(IEnumerable<byte> program, string destPath)
-        {
-            List<ushort> words = new();
-            List<byte> programData = new(program);
-            if (programData.Count % 2 == 1)
-            {
-                programData.Add(0);
-            }
-            for (int i = 0; i < programData.Count; i+= 2)
-            {
-                ushort datum = (ushort)((programData[i] << 8) | programData[i+1]);
-                words.Add(datum);
-            }
-            Disassemble(words, destPath);
         }
     }
 }
