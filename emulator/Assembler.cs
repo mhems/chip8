@@ -22,6 +22,7 @@ namespace emulator
             Dictionary<ushort, string> labels = new();
             HashSet<ushort> reachable = new();
             Stack<ushort> stack = new();
+
 #if false
             using (StreamWriter writer = File.CreateText("output.8o"))
             {
@@ -44,30 +45,32 @@ namespace emulator
 
             void Trace(ushort start_address, bool label=false, bool func=false)
             {
+                // Debug.WriteLine($"0x{start_address:x4} {label} {func}");
                 ushort address = start_address;
                 uint index = (ushort)(address >> 1);
                 while (index < programArray.Length)
                 {
                     reachable.Add(address);
                     Instruction instruction = new(programArray[index]);
-                    Debug.WriteLine($"{address:x4} {instruction.Code}");
+                    // Debug.WriteLine($"{address:x4} {instruction.Code}");
                     switch (instruction.Mnemonic)
                     {
                         case "CALL":
-                            if (func)
+                            ushort target = (ushort)(instruction.Arguments[0] - Chip8.PROGRAM_START_ADDRESS);
+                            if (!functions.ContainsKey(target))
                             {
-                                throw new NotImplementedException("cannot handle nested calls yet");
+                                functions.Add(target, $"func{functions.Count + 1}");
+                                stack.Push(address);
+                                Trace(target, label = false, func = true);
+                                address = stack.Pop();
+                                // Debug.WriteLine($"returned from tracing CALL, address=0x{address:x4}");
                             }
-                            stack.Push(address);
-                            Trace((ushort)(instruction.Arguments[0] - Chip8.PROGRAM_START_ADDRESS), label = false, func = true);
-                            address = stack.Pop();
                             break;
                         case "RET":
                             if (!func)
                             {
                                 throw new Exception("illegal return from non-function context");
                             }
-                            functions.Add(start_address, $"func{functions.Count + 1}");
                             returns.Add(address);
                             return;
                         case "JMPI":
@@ -89,10 +92,7 @@ namespace emulator
                         default:
                             break;
                     }
-                    if (instruction.Code == "SETI 0x6 0xF")
-                    {
-                        Debug.WriteLine("");
-                    }
+
                     address += 2;
                     index++;
                 }
@@ -155,7 +155,7 @@ namespace emulator
             }
             for (int i = 0; i < programData.Count; i+= 2)
             {
-                ushort datum = (ushort)((((ushort)programData[i]) << 8) | (ushort)programData[i+1]);
+                ushort datum = (ushort)((programData[i] << 8) | programData[i+1]);
                 words.Add(datum);
             }
             Disassemble(words, destPath);
