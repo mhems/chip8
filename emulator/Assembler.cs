@@ -1,6 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-using System.Text.Json;
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 
 namespace emulator
 {
@@ -9,7 +7,7 @@ namespace emulator
         /*
          * program := statement+
          * statement := function | label | instruction | data
-         * function := FUNC NAME NEWLINE '{' NEWLINE statement+ '}' NEWLINE
+         * function := FUNC NAME NEWLINE '{' NEWLINE (label | instruction)+ '}' NEWLINE
          * label := NAME NEWLINE 
          * instruction := "CLR" NEWLINE
          *              | "DRAW" REG REG NIBBLE NEWLINE
@@ -17,9 +15,9 @@ namespace emulator
          *              | unaryInstruction
          *              | regArgInstruction
          *              | regRegInstruction
-         * addressableInstruction := "JMPI" (ADDRESS | NAME) NEWLINE
-         *                         | "CALL" (ADDRESS | NAME) NEWLINE
-         *                         | ("STO | "JMPA") (ADDRESS | NAME) NEWLINE
+         * addressableInstruction := ("JMPI" | "JMPA") ADDRESS NEWLINE
+         *                         | "CALL" ADDRESS NEWLINE
+         *                         | "STO" ADDRESS NEWLINE
          * unaryInstruction := ("SKEQ" | "SKNE" | "DCPY" | "INP") REG NEWLINE
          *                   | ("DLY" | "SND" | "SAVE" | "LD") REG NEWLINE
          *                   | ("ADDM" | "SPR" | "BCD") REG NEWLINE
@@ -66,8 +64,17 @@ namespace emulator
         #endregion
 
         private readonly List<Token> tokens = [];
-        private readonly HashSet<LabelStatement> labels = [];
-        private readonly HashSet<Subroutine> subroutines = [];
+        private readonly List<Statement> statements = [];
+        private readonly HashSet<string> labelNames = [];
+        private readonly HashSet<string> subroutineNames = [];
+        private readonly HashSet<string> dataNames = [];
+        private readonly List<ushort> program = [];
+        private readonly Dictionary<string, ushort> labelAddresses = [];
+        private readonly Dictionary<string, ushort> functionAddresses = [];
+        private readonly Dictionary<string, ushort> dataAddresses = [];
+        private readonly Dictionary<ushort, InstructionStatement> backpatches = [];
+        
+        private string? entryName;
         private int pos;
 
         public void Assemble(string srcPath, string destPath)
@@ -75,18 +82,24 @@ namespace emulator
             Reset();
 
             Lex(srcPath);
-            // TODO coalesce adjacent newlines
-            var ast = Parse();
-            var code = Compile(ast);
-            Emit(code, destPath);
+            Parse();
+            Compile();
+            Emit(destPath);
         }
 
         private void Reset()
         {
             pos = 0;
             tokens.Clear();
-            labels.Clear();
-            subroutines.Clear();
+            labelNames.Clear();
+            subroutineNames.Clear();
+            statements.Clear();
+            dataNames.Clear();
+            program.Clear();
+            labelAddresses.Clear();
+            functionAddresses.Clear();
+            dataAddresses.Clear();
+            backpatches.Clear();
         }
 
         private void Lex(string filepath)
@@ -158,7 +171,7 @@ namespace emulator
                         }
                         else
                         {
-                            throw new Exception($"line {lineno}: unknown token '{token}'");
+                            throw new ParseException($"line {lineno}: unknown token '{token}'");
                         }
                     }
 
@@ -166,14 +179,64 @@ namespace emulator
                     lineno++;
                 }
             }
+
+            List<Token> coalescedTokens = [];
+            int i = 0;
+            while (i < tokens.Count)
+            {
+                coalescedTokens.Add(tokens[i]);
+                if (tokens[i].Kind == TokenKind.NEWLINE)
+                {
+                    while (tokens[i+1].Kind == TokenKind.NEWLINE)
+                    {
+                        i++;
+                    }
+                }
+
+                i++;
+            }
+
+            tokens.Clear();
+            tokens.AddRange(coalescedTokens);
         }
 
-        private object Parse()
+        private void Parse()
         {
-            // TODO enforce existence of entry point (main/start)
-            return null;
-        }
+            while(pos < tokens.Count)
+            {
+                switch (tokens[pos].Kind)
+                {
+                    case TokenKind.NAME:
+                        LabelStatement label = ParseLabel();
+                        statements.Add(label);
+                        break;
+                    case TokenKind.MNEMONIC:
+                        InstructionStatement instruction = ParseInstruction();
+                        statements.Add(instruction);
+                        break;
+                    case TokenKind.FUNCTION:
+                        Subroutine subroutine = ParseFunction();
+                        statements.Add(subroutine);
+                        break;
+                    case TokenKind.DATA:
+                        DataSegment data = ParseData();
+                        statements.Add(data);
+                        break;
+                    default:
+                        throw new ParseException(tokens[pos], "unknown statement");
+                }
+            }
+            
+            if (pos < tokens.Count - 1)
+            {
+                throw new ParseException(tokens[pos], "unconsumed statements");
+            }
 
+            entryName = labelNames.SingleOrDefault(name => Regex.IsMatch(name, entryPointLiteralRegex)) ??
+                throw new ParseException("program must have an entrypoint");
+        }
+        
+        #region parsing helpers
         private Token Expect(TokenKind kind)
         {
             if (tokens[pos].Kind != kind)
@@ -183,36 +246,21 @@ namespace emulator
             return tokens[pos++];
         }
 
-        private Subroutine ParseFunction(HashSet<string>? names = null)
+        private Subroutine ParseFunction()
         {
             Expect(TokenKind.FUNCTION);
             Token token = Expect(TokenKind.NAME);
             string name = token.Value?.ToString() ?? throw new ParseException(token, "function must have name");
-            if (names == null)
+            if (subroutineNames.Contains(name))
             {
-                if (subroutines.Any(f => f.Name == name))
-                {
-                    throw new ParseException(token, "top-level function names must be unique");
-                }
-            }
-            else if (names.Contains(name))
-            {
-                throw new ParseException(token, "inner function names must be unique within that function");
+                throw new ParseException(token, $"function '{name}' already declared");
             }
             Subroutine subroutine = new(name);
             Expect(TokenKind.NEWLINE);
             Expect(TokenKind.LEFT_CURLY);
             while (tokens[pos].Kind != TokenKind.RIGHT_CURLY)
             {
-                if (tokens[pos].Kind == TokenKind.FUNCTION)
-                {
-                    Subroutine nested = ParseFunction(subroutine.statements
-                        .Where(s => s is Subroutine)
-                        .Cast<Subroutine>()
-                        .Select(s => s.Name).ToHashSet());
-                    subroutine.statements.Add(nested);
-                }
-                else if (tokens[pos].Kind == TokenKind.NAME)
+                if (tokens[pos].Kind == TokenKind.NAME)
                 {
                     LabelStatement label = ParseLabel();
                     subroutine.statements.Add(label);
@@ -221,11 +269,6 @@ namespace emulator
                 {
                     InstructionStatement instruction = ParseInstruction();
                     subroutine.statements.Add(instruction);
-                }
-                else if (tokens[pos].Kind == TokenKind.DATA)
-                {
-                    DataSegment data = ParseData();
-                    subroutine.statements.Add(data);
                 }
                 else
                 {
@@ -238,10 +281,10 @@ namespace emulator
             {
                 throw new ParseException(token, $"subroutine {name} must have at least one statement");
             }
-            if (names == null)
-            {
-                subroutines.Add(subroutine);
-            }
+
+            statements.Add(subroutine);
+            subroutineNames.Add(name);
+
             return subroutine;
         }
 
@@ -250,12 +293,13 @@ namespace emulator
             Token token = Expect(TokenKind.NAME);
             string name = token.Value.ToString() ?? throw new ParseException(token, "label name is null");
             Expect(TokenKind.NEWLINE);
-            if (labels.Any(label => label.Name == name))
+            if (labelNames.Contains(name))
             {
-                throw new ParseException(token, "labels must be globally unique");
+                throw new ParseException(token, $"label name '{name}' already declared");
             }
             LabelStatement label = new(name);
-            labels.Add(label);
+            statements.Add(label);
+            labelNames.Add(name);
             return label;
         }
 
@@ -279,19 +323,8 @@ namespace emulator
             }
             else if (addressableMnemonics.Contains(mnemonic))
             {
-                if (tokens[pos].Kind == TokenKind.NAME)
-                {
-                    instruction = new(tokens[pos]);
-                }
-                else if (tokens[pos].Kind == TokenKind.NUMBER)
-                {
-                    instruction = new(mnemonic, [ParseNumber(12)]);
-                }
-                else
-                {
-                    throw new ParseException(tokens[pos], $"expected name or address as argument of this instruction");
-                }
-                pos++;
+                Token name = Expect(TokenKind.NAME);
+                instruction = new(mnemonic, name.Value.ToString() ?? throw new ParseException(name, "name has no value"));
             }
             else if (regArgMnemonics.Contains(mnemonic))
             {
@@ -343,7 +376,10 @@ namespace emulator
             Expect(TokenKind.DATA);
             Token token = Expect(TokenKind.NAME);
             string name = token.Value?.ToString() ?? throw new ParseException(token, "data must have name");
-            // TODO ensure uniqueness (globally? function-local? i think we need scopes...)
+            if (dataNames.Contains(name))
+            {
+                throw new ParseException(token, $"data name '{name}' already declared");
+            }
             DataSegment data = new(name);
             Expect(TokenKind.NEWLINE);
             Expect(TokenKind.LEFT_CURLY);
@@ -361,15 +397,119 @@ namespace emulator
             }
             return data;
         }
-
-        private object Compile(object ast)
+        #endregion
+        
+        private void Compile()
         {
-            return null;
+            int i = 0;
+            ushort offset = 0;
+
+            program.Add(0x0000);
+            backpatches.Add(0, new InstructionStatement("JMPI", entryName ?? throw new ParseException("no entry point")));
+            offset += 2;
+
+            foreach (Statement stmt in statements)
+            {
+                if (stmt is LabelStatement)
+                {
+                    labelAddresses[stmt.Name] = offset;
+                }
+                else if (stmt is Subroutine subroutine)
+                {
+                    functionAddresses[stmt.Name] = offset;
+                    foreach (Statement inner in subroutine.statements)
+                    {
+                        if (inner is LabelStatement)
+                        {
+                            labelAddresses[inner.Name] = offset;
+                        }
+                        else if (inner is InstructionStatement instruction)
+                        {
+                            CompileInstruction(instruction, ref offset);
+                        }
+                    }
+                    program.Add(new Instruction("RET", []).Value);
+                }
+                else if (stmt is DataSegment data)
+                {
+                    dataAddresses[stmt.Name] = offset;
+                    foreach(ushort datum in data.data)
+                    {
+                        program.Add(datum);
+                        offset += 2;
+                    }
+                }
+                else if (stmt is InstructionStatement instruction)
+                {
+                    CompileInstruction(instruction, ref offset);
+                }
+                else
+                {
+                    throw new ParseException($"unknown statement '{stmt.Name}'");
+                }
+
+                i++;
+            }
+
+            foreach((ushort o, InstructionStatement instruction) in backpatches)
+            {
+                Backpatch(instruction, o >> 1);
+            }    
         }
 
-        private void Emit(object code, string destPath)
+        #region compile helpers
+        private void CompileInstruction(InstructionStatement instruction, ref ushort offset)
         {
+            if (instruction.NeedsAddressResolution)
+            {
+                program.Add(0x0000);
+                backpatches.Add(offset, instruction);
+            }
+            else
+            {
+                program.Add(instruction.instruction?.Value ?? throw new ParseException("instruction is null"));
+            }
 
+            offset += 2;
+        }
+
+        private void Backpatch(InstructionStatement instruction, int index)
+        {
+            string name = instruction.name ?? throw new ParseException("addressable instruction without name");
+            Instruction i = instruction.mnemonic switch
+            {
+                "JMPI" => ResolveInstruction(instruction, labelAddresses, name),
+                "JMPA" => ResolveInstruction(instruction, labelAddresses, name),
+                "STO" => ResolveInstruction(instruction, dataAddresses, name),
+                "CALL" => ResolveInstruction(instruction, functionAddresses, name),
+                _ => throw new ParseException($"illegal instruction needing address resolution {instruction.mnemonic}")
+            };
+            program[index] = i.Value;
+        }
+
+        private static Instruction ResolveInstruction(InstructionStatement instruction,
+            Dictionary<string, ushort> lookup,
+            string name)
+        {
+            if (lookup.TryGetValue(name, out ushort address))
+            {
+                return new(instruction.mnemonic, [(ushort)(address + Chip8.PROGRAM_START_ADDRESS)]);
+            }
+            else
+            {
+                throw new ParseException($"never found segment with name '{name}'");
+            }
+        }
+        #endregion
+
+        private void Emit(string destPath)
+        {
+            byte[] bytes = program
+                .SelectMany(word => new byte[2] {
+                    (byte)((word & 0xFF00) >> 8),
+                    (byte)(word & 0x00FF)
+                }).ToArray();
+            File.WriteAllBytes(destPath, bytes);
         }
 
         private readonly struct Token(int line, object value, TokenKind kind)
@@ -377,12 +517,6 @@ namespace emulator
             public int Line { get; } = line; // 1-based
             public object Value { get; } = value;
             public TokenKind Kind { get; } = kind;
-        }
-
-        private class ParseException(Token token, string message) :
-            Exception($"line {token.Line}: '{token.Value}' - {message}")
-        {
-
         }
 
         private enum TokenKind
@@ -399,46 +533,56 @@ namespace emulator
             DATA,
         }
 
-        private abstract class Statement
+        private class ParseException(string message) : Exception(message)
         {
+            public ParseException(Token token, string message) :
+                this($"line {token.Line}: '{token.Value}' - {message}")
+            {
+
+            }
         }
 
-        private class DataSegment(string name) : Statement
+        #region AST objects
+        private abstract class Statement(string? name)
         {
-            public string Name { get; } = name;
+            public string Name { get; } = name ?? throw new Exception();
+        }
+
+        private class DataSegment(string name) : Statement(name)
+        {
             public readonly List<ushort> data = [];
         }
 
-        private class LabelStatement(string name) : Statement
+        private class LabelStatement(string name) : Statement(name)
         {
-            public string Name { get; } = name;
         }
 
         private class InstructionStatement : Statement
         {
             public readonly Instruction? instruction;
-            public readonly Token? token;
+            public readonly string mnemonic;
             public readonly string? name;
+            public bool NeedsAddressResolution => name != null;
 
-            public InstructionStatement(string mnemonic, ushort[] args)
+            public InstructionStatement(string mnemonic, ushort[] args) : base(mnemonic)
             {
                 instruction = new Instruction(mnemonic, args);
-                token = null;
+                this.mnemonic = mnemonic;
                 name = null;
             }
 
-            public InstructionStatement(Token token)
+            public InstructionStatement(string mnemonic, string name) : base(mnemonic)
             {
                 instruction = null;
-                this.token = token;
-                name = token.Value.ToString();
+                this.mnemonic = mnemonic;
+                this.name = name;
             }
         }
 
-        private class Subroutine(string name) : Statement
+        private class Subroutine(string name) : Statement(name)
         {
-            public string Name { get; } = name;
             public readonly List<Statement> statements = [];
         }
+        #endregion
     }
 }
