@@ -53,14 +53,14 @@ namespace emulator
         private static readonly HashSet<string> regRegMnemonics = ["SEQ", "SET", "OR", "AND", "XOR", "ADD",
             "SUB", "RSH", "RSUB", "LSH", "SNE"];
         private static readonly HashSet<string> regArgMnemonics = ["SEQI", "SNEI", "SETI", "ADDI", "RAND"];
-        private const string functionLiteralRegex = "func";
-        private const string dataLiteralRegex = "data";
-        private const string nameLiteralRegex = "[a-z][a-z0-9_]+";
-        private const string decimalNumberLiteralRegex = "[1-9][0-9]*";
-        private const string binaryNumberLiteralRegex = "0b[01]+";
-        private const string hexNumberLiteralRegex = "0x[0-9a-f]+";
-        private const string registerLiteralRegex = "v[0-9a-fA-F]";
-        private const string entryPointLiteralRegex = "start|main";
+        private const string functionLiteralRegex = "^func$";
+        private const string dataLiteralRegex = "^data$";
+        private const string nameLiteralRegex = "^[a-z][a-z0-9_]+$";
+        private const string decimalNumberLiteralRegex = "^[1-9][0-9]*$";
+        private const string binaryNumberLiteralRegex = "^0b[01]+$";
+        private const string hexNumberLiteralRegex = "^0x[0-9a-f]+$";
+        private const string registerLiteralRegex = "^v[0-9a-fA-F]$";
+        private const string entryPointLiteralRegex = "^(start|main)$";
         #endregion
 
         private readonly List<Token> tokens = [];
@@ -119,7 +119,7 @@ namespace emulator
                     {
                         line = line[..commentStart];
                     }
-                    foreach (string token in line.Replace('\t', ' ').Split(' '))
+                    foreach (string token in line.Replace('\t', ' ').Split(' ', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
                     {
                         if (Regex.IsMatch(token, functionLiteralRegex, RegexOptions.IgnoreCase))
                         {
@@ -147,10 +147,6 @@ namespace emulator
                                                  Convert.ToByte(token[1].ToString(), 16),
                                                  TokenKind.REGISTER));
                         }
-                        else if (Regex.IsMatch(token, nameLiteralRegex, RegexOptions.IgnoreCase))
-                        {
-                            tokens.Add(new Token(lineno, token.ToUpper(), TokenKind.NAME));
-                        }
                         else if (Regex.IsMatch(token, binaryNumberLiteralRegex, RegexOptions.IgnoreCase))
                         {
                             tokens.Add(new Token(lineno,
@@ -168,6 +164,10 @@ namespace emulator
                             tokens.Add(new Token(lineno,
                                                  Convert.ToUInt16(token[2..], 16),
                                                  TokenKind.NUMBER));
+                        }
+                        else if (Regex.IsMatch(token, nameLiteralRegex, RegexOptions.IgnoreCase))
+                        {
+                            tokens.Add(new Token(lineno, token.ToUpper(), TokenKind.NAME));
                         }
                         else
                         {
@@ -187,7 +187,7 @@ namespace emulator
                 coalescedTokens.Add(tokens[i]);
                 if (tokens[i].Kind == TokenKind.NEWLINE)
                 {
-                    while (tokens[i+1].Kind == TokenKind.NEWLINE)
+                    while (i + 1 < tokens.Count && tokens[i+1].Kind == TokenKind.NEWLINE)
                     {
                         i++;
                     }
@@ -232,7 +232,7 @@ namespace emulator
                 throw new ParseException(tokens[pos], "unconsumed statements");
             }
 
-            entryName = labelNames.SingleOrDefault(name => Regex.IsMatch(name, entryPointLiteralRegex)) ??
+            entryName = labelNames.SingleOrDefault(name => Regex.IsMatch(name, entryPointLiteralRegex, RegexOptions.IgnoreCase)) ??
                 throw new ParseException("program must have an entrypoint");
         }
         
@@ -282,7 +282,6 @@ namespace emulator
                 throw new ParseException(token, $"subroutine {name} must have at least one statement");
             }
 
-            statements.Add(subroutine);
             subroutineNames.Add(name);
 
             return subroutine;
@@ -298,7 +297,6 @@ namespace emulator
                 throw new ParseException(token, $"label name '{name}' already declared");
             }
             LabelStatement label = new(name);
-            statements.Add(label);
             labelNames.Add(name);
             return label;
         }
@@ -383,6 +381,7 @@ namespace emulator
             DataSegment data = new(name);
             Expect(TokenKind.NEWLINE);
             Expect(TokenKind.LEFT_CURLY);
+            Expect(TokenKind.NEWLINE);
             while (tokens[pos].Kind != TokenKind.RIGHT_CURLY)
             {
                 ushort number = ParseNumber(16);
@@ -517,6 +516,11 @@ namespace emulator
             public int Line { get; } = line; // 1-based
             public object Value { get; } = value;
             public TokenKind Kind { get; } = kind;
+
+            public override string ToString()
+            {
+                return $"line {Line} '{Value}' {Kind}";
+            }
         }
 
         private enum TokenKind

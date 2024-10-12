@@ -71,10 +71,13 @@ namespace emulatorTest
         [DataRow("2-ibm-logo.ch8")]
         [DataRow("3-corax+.ch8")]
         [DataRow("4-flags.ch8")]
+        [DataRow("5-quirks.ch8")]
+        [DataRow("6-keypad.ch8")]
+        [DataRow("7-beep.ch8")]
         [TestMethod]
         public void TestDisassembler(string rom)
         {
-            Assembler.Disassemble(rom, Path.GetFileNameWithoutExtension(rom) + ".8o");
+            Disassembler.Disassemble(rom, Path.GetFileNameWithoutExtension(rom) + ".8o");
         }
     }
 }

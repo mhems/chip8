@@ -1,0 +1,14 @@
+﻿main
+  CLR
+  STO hi
+  SETI v1 5
+  DRAW v1 v1 3
+
+loop
+  JMPI loop
+
+data hi
+{
+  0xaee4
+  0xae00
+}
