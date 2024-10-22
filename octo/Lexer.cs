@@ -9,6 +9,8 @@ namespace octo
      * directive := ':alias' NAME V_REGISTER
      *            | ':alias' NAME '{' constExpr '}'
      *            | ':' NAME
+     *            | ':breakpoint' NAME
+     *            | ':monitor' (NUMBER | v_register) (NUMBER | NAME | STRING)
      *            | ':call' constExpr
      *            | ':const' NAME (NUMBER | NAME)
      *            | ':unpack' (nibble | 'long') NAME
@@ -119,6 +121,28 @@ namespace octo
      * MACRO_CONSTANT := 'CALLS'
      */
 
+    /*
+     * superChipStatement := 'hires'
+     *                     | 'lores'
+     *                     | 'exit'
+     *                     | 'scroll-down' (NUMBER | NAME)
+     *                     | 'scroll-left' (NUMBER | NAME)
+     *                     | 'scroll-right' (NUMBER | NAME)
+     *                     | 'saveflags' v_register
+     *                     | 'loadflags' v_register
+     * superChipAssignment := 'i' ':=' 'bighex' v_register
+     */
+
+    /*
+     * xoChipStatement := 'save' v_register '-' v_register
+     *                  | 'load' v_register '-' v_register
+     *                  | 'plane' (NUMBER | NAME)
+     *                  | 'audio'
+     *                  | 'scroll-up' (NUMBER | NAME)
+     * xoChipAssignment := 'i' ':=' 'long' (NUMBER | NAME)
+     *                   | 'pitch' ':=' v_register
+     */
+
     public class Lexer
     {
         public const string RegisterLiteralRegex = "^(v[0-9a-fA-F]|i|delay|buzzer)$";
@@ -167,7 +191,9 @@ namespace octo
             "byte",
             "stringmode",
             "include",
-            "pointer"
+            "pointer",
+            "breakpoint",
+            "monitor"
             ];
 
         public static readonly HashSet<string> Operators = [

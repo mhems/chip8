@@ -236,6 +236,9 @@ namespace octo
     {
 
     }
+
+    public class DebuggingDirective : Directive { }
+
     public abstract class Alias(string name) : Directive
     {
         public string Name { get; } = name;

@@ -273,12 +273,46 @@ namespace octo
                 ":stringmode" => ParseStringmodeDirective(),
                 ":assert" => ParseAssertDirective(),
                 ":include" => ParseIncludeDirective(),
+                ":breakpoint" => ParseBreakpointDirective(),
+                ":monitor" => ParseMonitorDirective(),
                 _ => throw new ParseException(tokens[pos], "no directive found")
             };
             Expect(TokenKind.NEWLINE);
             return directive;
         }
-        
+
+        private DebuggingDirective ParseBreakpointDirective()
+        {
+            ExpectDirective("breakpoint");
+            Expect(TokenKind.NAME);
+            return new DebuggingDirective();
+        }
+
+        private DebuggingDirective ParseMonitorDirective()
+        {
+            ExpectDirective("monitor");
+            if (tokens[pos].Kind == TokenKind.NUMBER)
+            {
+                ParseNumber();
+            }
+            else
+            {
+                ParseRegisterReference();
+            }
+            switch (tokens[pos].Kind)
+            {
+                case TokenKind.STRING:
+                case TokenKind.NUMBER:
+                case TokenKind.NAME:
+                case TokenKind.CONSTANT:
+                    pos++;
+                    break;
+                default:
+                    throw new ParseException(tokens[pos], "monitor directive must end with number, name, or string");
+            }
+            return new DebuggingDirective();
+        }
+
         private Alias ParseAliasDirective()
         {
             ExpectDirective("alias");
