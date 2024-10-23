@@ -14,7 +14,7 @@ namespace octo
 
         public Statement[] Parse()
         {
-            List<Statement> statements = new List<Statement>();
+            List<Statement> statements = [];
             while (pos < tokens.Count)
             {
                 while (pos < tokens.Count && tokens[pos].Kind == TokenKind.NEWLINE)
@@ -32,6 +32,7 @@ namespace octo
 
         private Statement ParseStatement(bool allowDanglingIf = false)
         {
+            Token first = tokens[pos];
             string text = tokens[pos].Value.ToString();
             if (text.StartsWith(':'))
             {
@@ -62,12 +63,12 @@ namespace octo
                     Expect(TokenKind.NEWLINE);
                     if (args.Count == 0)
                     {
-                        return new AmbiguousCall(name);
+                        return new AmbiguousCall(first, name);
                     }
-                    return new MacroInvocation(name, args.ToArray());
+                    return new MacroInvocation(first, name, args.ToArray());
                 }
                 pos++;
-                return ExpectNewlineAndReturn(new AmbiguousCall(name));
+                return ExpectNewlineAndReturn(new AmbiguousCall(first, name));
 
             }
             else if (tokens[pos].Kind == TokenKind.REGISTER && text.StartsWith('v'))
@@ -77,7 +78,7 @@ namespace octo
 
             if (tokens[pos].Kind == TokenKind.NUMBER)
             {
-                return new DataDeclaration(Convert.ToByte(tokens[pos++].Value));
+                return new DataDeclaration(tokens[pos], Convert.ToByte(tokens[pos++].Value));
             }
 
             pos++;
@@ -85,32 +86,32 @@ namespace octo
             {
                 case ";":
                 case "return":
-                    return ExpectNewlineAndReturn(new ReturnStatement());
+                    return ExpectNewlineAndReturn(new ReturnStatement(first));
                 case "clear":
-                    return ExpectNewlineAndReturn(new ClearStatement());
+                    return ExpectNewlineAndReturn(new ClearStatement(first));
                 case "bcd":
-                    return ExpectNewlineAndReturn(new BcdStatement(ParseRegisterReference()));
+                    return ExpectNewlineAndReturn(new BcdStatement(first, ParseRegisterReference()));
                 case "save":
-                    return ExpectNewlineAndReturn(new SaveStatement(ParseRegisterReference()));
+                    return ExpectNewlineAndReturn(new SaveStatement(first, ParseRegisterReference()));
                 case "load":
-                    return ExpectNewlineAndReturn(new LoadStatement(ParseRegisterReference()));
+                    return ExpectNewlineAndReturn(new LoadStatement(first, ParseRegisterReference()));
                 case "sprite":
                     GenericRegisterReference x = ParseRegisterReference();
                     GenericRegisterReference y = ParseRegisterReference();
                     RValue height = ParseNumber();
-                    return ExpectNewlineAndReturn(new SpriteStatement(x, y, height));
+                    return ExpectNewlineAndReturn(new SpriteStatement(first, x, y, height));
                 case "jump":
                     if (tokens[pos].Kind == TokenKind.NAME)
                     {
-                        return ExpectNewlineAndReturn(new JumpImmediateStatement(ParseName()));
+                        return ExpectNewlineAndReturn(new JumpImmediateStatement(first, ParseName()));
                     }
-                    return ExpectNewlineAndReturn(new JumpImmediateStatement(ParseNumber()));
+                    return ExpectNewlineAndReturn(new JumpImmediateStatement(first, ParseNumber()));
                 case "jump0":
                     if (tokens[pos].Kind == TokenKind.NAME)
                     {
-                        return ExpectNewlineAndReturn(new JumpAdditiveStatement(ParseName()));
+                        return ExpectNewlineAndReturn(new JumpAdditiveStatement(first, ParseName()));
                     }
-                    return ExpectNewlineAndReturn(new JumpAdditiveStatement(ParseNumber()));
+                    return ExpectNewlineAndReturn(new JumpAdditiveStatement(first, ParseNumber()));
                 case "if":
                     pos--;
                     return ParseIf(allowDanglingIf);
@@ -127,6 +128,7 @@ namespace octo
         private Assignment ParseAssignment()
         {
             string text = tokens[pos].Value.ToString();
+            Token first = tokens[pos];
             switch (text)
             {
                 case "delay":
@@ -136,7 +138,7 @@ namespace octo
                         throw new ParseException(tokens[pos], "delay can only be assigned to");
                     }
                     pos++;
-                    return ExpectNewlineAndReturn(new LoadDelayAssignment(ParseRegisterReference()));
+                    return ExpectNewlineAndReturn(new LoadDelayAssignment(first, ParseRegisterReference()));
                 case "buzzer":
                     pos++;
                     if (tokens[pos].Value.ToString() != ":=")
@@ -144,7 +146,7 @@ namespace octo
                         throw new ParseException(tokens[pos], "buzzer can only be assigned to");
                     }
                     pos++;
-                    return ExpectNewlineAndReturn(new LoadBuzzerAssignment(ParseRegisterReference()));
+                    return ExpectNewlineAndReturn(new LoadBuzzerAssignment(first, ParseRegisterReference()));
                 case "i":
                     pos++;
                     switch (tokens[pos].Value.ToString())
@@ -154,16 +156,16 @@ namespace octo
                             if (tokens[pos].Value.ToString() == "hex")
                             {
                                 pos++;
-                                return ExpectNewlineAndReturn(new LoadCharacterAssignment(ParseRegisterReference()));
+                                return ExpectNewlineAndReturn(new LoadCharacterAssignment(first, ParseRegisterReference()));
                             }
                             else if (tokens[pos].Kind == TokenKind.NUMBER)
                             {
-                                return ExpectNewlineAndReturn(new MemoryAssignment(ParseNumber()));
+                                return ExpectNewlineAndReturn(new MemoryAssignment(first, ParseNumber()));
                             }
-                            return ExpectNewlineAndReturn(new MemoryAssignment(ParseName()));
+                            return ExpectNewlineAndReturn(new MemoryAssignment(first, ParseName()));
                         case "+=":
                             pos++;
-                            return ExpectNewlineAndReturn(new MemoryIncrementAssignment(ParseRegisterReference()));
+                            return ExpectNewlineAndReturn(new MemoryIncrementAssignment(first, ParseRegisterReference()));
                         default:
                             throw new ParseException(tokens[pos], "expected operator ':=' or '+=' when assigning to 'i'");
                     }
@@ -179,76 +181,76 @@ namespace octo
                     {
                         case "key":
                             pos++;
-                            return ExpectNewlineAndReturn(new KeyInputAssignment(dest));
+                            return ExpectNewlineAndReturn(new KeyInputAssignment(first, dest));
                         case "delay":
                             pos++;
-                            return ExpectNewlineAndReturn(new SaveDelayAssignment(dest));
+                            return ExpectNewlineAndReturn(new SaveDelayAssignment(first, dest));
                         case "random":
                             pos++;
                             if (tokens[pos].Kind == TokenKind.NUMBER)
                             {
                                 RValue mask = ParseNumber();
-                                return new RandomAssignment(dest, mask);
+                                return new RandomAssignment(first, dest, mask);
                             }
-                            return ExpectNewlineAndReturn(new RandomAssignment(dest, ParseName()));
+                            return ExpectNewlineAndReturn(new RandomAssignment(first, dest, ParseName()));
                     }
 
                     if (tokens[pos].Kind == TokenKind.NUMBER)
                     {
-                        return ExpectNewlineAndReturn(new ImmediateAssignment(dest, ParseNumber()));
+                        return ExpectNewlineAndReturn(new ImmediateAssignment(first, dest, ParseNumber()));
                     }
                     else if (tokens[pos].Kind == TokenKind.REGISTER)
                     {
-                        return ExpectNewlineAndReturn(new RegisterCopyAssignment(dest, ParseRegisterReference()));
+                        return ExpectNewlineAndReturn(new RegisterCopyAssignment(first, dest, ParseRegisterReference()));
                     }
                     else
                     {
-                        return ExpectNewlineAndReturn(new ImmediateAssignment(dest, ParseName()));
+                        return ExpectNewlineAndReturn(new ImmediateAssignment(first, dest, ParseName()));
                     }
                 case "+=":
                     if (tokens[pos].Kind == TokenKind.NUMBER)
                     {
-                        return ExpectNewlineAndReturn(new ImmediateAdditionAssignment(dest, ParseNumber()));
+                        return ExpectNewlineAndReturn(new ImmediateAdditionAssignment(first, dest, ParseNumber()));
                     }
                     else if (tokens[pos].Kind == TokenKind.REGISTER)
                     {
-                        return ExpectNewlineAndReturn(new RegisterAddAssignment(dest, ParseRegisterReference()));
+                        return ExpectNewlineAndReturn(new RegisterAddAssignment(first, dest, ParseRegisterReference()));
                     }
                     else
                     {
-                        return ExpectNewlineAndReturn(new ImmediateAdditionAssignment(dest, ParseName()));
+                        return ExpectNewlineAndReturn(new ImmediateAdditionAssignment(first, dest, ParseName()));
                     }
                 case "-=":
                     if (tokens[pos].Kind == TokenKind.NUMBER)
                     {
-                        return ExpectNewlineAndReturn(new ImmediateSubtractionAssignment(dest, ParseNumber()));
+                        return ExpectNewlineAndReturn(new ImmediateSubtractionAssignment(first, dest, ParseNumber()));
                     }
                     else if (tokens[pos].Kind == TokenKind.REGISTER)
                     {
-                        return ExpectNewlineAndReturn(new RegisterSubtractionAssignment(dest, ParseRegisterReference()));
+                        return ExpectNewlineAndReturn(new RegisterSubtractionAssignment(first, dest, ParseRegisterReference()));
                     }
                     else
                     {
-                        return ExpectNewlineAndReturn(new ImmediateSubtractionAssignment(dest, ParseName()));
+                        return ExpectNewlineAndReturn(new ImmediateSubtractionAssignment(first, dest, ParseName()));
                     }
                 case "=-":
                     src = ParseRegisterReference();
-                    return ExpectNewlineAndReturn(new RegisterReverseSubtractionAssignment(dest, src));
+                    return ExpectNewlineAndReturn(new RegisterReverseSubtractionAssignment(first, dest, src));
                 case "|=":
                     src = ParseRegisterReference();
-                    return ExpectNewlineAndReturn(new RegisterOrAssignment(dest, src));
+                    return ExpectNewlineAndReturn(new RegisterOrAssignment(first, dest, src));
                 case "&=":
                     src = ParseRegisterReference();
-                    return ExpectNewlineAndReturn(new RegisterAndAssignment(dest, src));
+                    return ExpectNewlineAndReturn(new RegisterAndAssignment(first, dest, src));
                 case "^=":
                     src = ParseRegisterReference();
-                    return ExpectNewlineAndReturn(new RegisterXorAssignment(dest, src));
+                    return ExpectNewlineAndReturn(new RegisterXorAssignment(first, dest, src));
                 case ">>=":
                     src = ParseRegisterReference();
-                    return ExpectNewlineAndReturn(new RegisterRightShiftAssignment(dest, src));
+                    return ExpectNewlineAndReturn(new RegisterRightShiftAssignment(first, dest, src));
                 case "<<=":
                     src = ParseRegisterReference();
-                    return ExpectNewlineAndReturn(new RegisterLeftShiftAssignment(dest, src));
+                    return ExpectNewlineAndReturn(new RegisterLeftShiftAssignment(first, dest, src));
                 default:
                     throw new ParseException(tokens[pos], "unknown operator");
             }
@@ -283,14 +285,14 @@ namespace octo
 
         private DebuggingDirective ParseBreakpointDirective()
         {
-            ExpectDirective("breakpoint");
-            Expect(TokenKind.NAME);
-            return new DebuggingDirective();
+            Token t = ExpectDirective("breakpoint");
+            string name = Expect(TokenKind.NAME).Value.ToString();
+            return new DebuggingDirective(t, ":breakpoint " + name);
         }
 
         private DebuggingDirective ParseMonitorDirective()
         {
-            ExpectDirective("monitor");
+            Token t = ExpectDirective("monitor");
             if (tokens[pos].Kind == TokenKind.NUMBER)
             {
                 ParseNumber();
@@ -310,19 +312,19 @@ namespace octo
                 default:
                     throw new ParseException(tokens[pos], "monitor directive must end with number, name, or string");
             }
-            return new DebuggingDirective();
+            return new DebuggingDirective(t, ":monitor " + string.Join(' ', tokens[(pos-2)..pos].Select(t => t.Value.ToString())));
         }
 
         private Alias ParseAliasDirective()
         {
-            ExpectDirective("alias");
+            Token t = ExpectDirective("alias");
             string name = ParseName().Name;
             if (tokens[pos].Kind == TokenKind.LEFT_CURLY_BRACE)
             {
                 Expect(TokenKind.LEFT_CURLY_BRACE);
                 CalculationExpression e = ParseCalculationExpression();
                 Expect(TokenKind.RIGHT_CURLY_BRACE);
-                return new ConstantAlias(name, e);
+                return new ConstantAlias(t, name, e);
             }
             if (tokens[pos].Kind == TokenKind.REGISTER)
             {
@@ -330,7 +332,7 @@ namespace octo
                 {
                     byte index = Convert.ToByte(tokens[pos].Value.ToString()[1..], 16);
                     pos++;
-                    return new RegisterAlias(name, index);
+                    return new RegisterAlias(t, name, index);
                 }
                 throw new ParseException(tokens[pos], "can only alias 'v' registers");
             }
@@ -339,6 +341,7 @@ namespace octo
         
         private LabelDeclaration ParseLabelDeclaration()
         {
+            Token t = tokens[pos];
             if (tokens[pos].Kind == TokenKind.OPERATOR &&
                 tokens[pos].Value.ToString() == ":")
             {
@@ -347,68 +350,68 @@ namespace octo
                 {
                     pos++;
                 }
-                return new LabelDeclaration(ParseName().Name);
+                return new LabelDeclaration(t, ParseName().Name);
             }
             throw new ParseException("expected a label declaration");
         }
 
         private FunctionCall ParseFunctionCallDirective()
         {
-            ExpectDirective("call");
+            Token t = ExpectDirective("call");
             CalculationExpression expr = ParseCalculationExpression();
-            return new FunctionCall(expr);
+            return new FunctionCall(t, expr);
         }
 
         private ConstantDirective ParseConstantDirective()
         {
-            ExpectDirective("const");
+            Token t = ExpectDirective("const");
             string name = ParseName().Name;
             if (tokens[pos].Kind == TokenKind.NAME)
             {
-                return new ConstantDirective(name, ParseName());
+                return new ConstantDirective(t, name, ParseName());
             }
             else if (tokens[pos].Kind == TokenKind.NUMBER)
             {
-                return new ConstantDirective(name, ParseNumber());
+                return new ConstantDirective(t, name, ParseNumber());
             }
             throw new ParseException(tokens[pos], "expected name or number to follow const directive");
         }
 
         private UnpackDirective ParseUnpackDirective()
         {
-            ExpectDirective("unpack");
+            Token t = ExpectDirective("unpack");
             if (tokens[pos].Kind == TokenKind.NUMBER)
             {
                 NumericLiteral num = ParseNumber();
                 NamedReference name = ParseName();
-                return new UnpackNumberDirective(name, num);
+                return new UnpackNumberDirective(t, name, num);
             }
             else
             {
                 ExpectKeyword("long");
                 NamedReference name = ParseName();
-                return new UnpackLongDirective(name);
+                return new UnpackLongDirective(t, name);
             }
         }
 
         private NextDirective ParseNextDirective()
         {
-            ExpectDirective("next");
+            Token t = ExpectDirective("next");
             string name = ParseName().Name;
             Statement stmt = ParseStatement();
-            return new NextDirective(name, stmt);
+            return new NextDirective(t, name, stmt);
         }
 
         private OrgDirective ParseOrgDirective()
         {
-            ExpectDirective("org");
+            Token t = ExpectDirective("org");
             CalculationExpression expr = ParseCalculationExpression();
-            return new OrgDirective(expr);
+            return new OrgDirective(t, expr);
         }
 
         private MacroDefinition ParseMacroDefinition()
         {
-            ExpectDirective("macro");
+            Token t = ExpectDirective("macro");
             string name = ParseName().Name;
             List<RValue> parameters = [];
             while (tokens[pos].Kind != TokenKind.LEFT_CURLY_BRACE &&
@@ -431,35 +434,35 @@ namespace octo
                 body.Add(ParseStatement());
             }
             Expect(TokenKind.RIGHT_CURLY_BRACE);
-            return new MacroDefinition(name, parameters.ToArray(), body.ToArray());
+            return new MacroDefinition(t, name, parameters.ToArray(), body.ToArray());
         }
 
         private Calculation ParseCalculationDirective()
         {
-            ExpectDirective("calc");
+            Token t = ExpectDirective("calc");
             string name = ParseName().Name;
             Expect(TokenKind.LEFT_CURLY_BRACE);
             CalculationExpression expr = ParseCalculationExpression();
             Expect(TokenKind.RIGHT_CURLY_BRACE);
-            return new Calculation(name, expr);
+            return new Calculation(t, name, expr);
         }
 
         private ByteDirective ParseByteDirective()
         {
-            ExpectDirective("byte");
+            Token t = ExpectDirective("byte");
             switch (tokens[pos].Kind)
             {
                 case TokenKind.LEFT_CURLY_BRACE:
                     Expect(TokenKind.LEFT_CURLY_BRACE);
                     CalculationExpression expr = ParseCalculationExpression();
                     Expect(TokenKind.RIGHT_CURLY_BRACE);
-                    return new ExpressionByteDirective(expr);
+                    return new ExpressionByteDirective(t, expr);
                 case TokenKind.NAME:
                     NamedReference name = ParseName();
-                    return new ValueByteDirective(name);
+                    return new ValueByteDirective(t, name);
                  case TokenKind.NUMBER:
                     NumericLiteral num = ParseNumber();
-                    return new ValueByteDirective(num);
+                    return new ValueByteDirective(t, num);
                 default:
                     throw new ParseException(tokens[pos], "expected constant expression, name, or number to follow :byte directive");
             }
@@ -467,14 +470,14 @@ namespace octo
         
         private PointerDirective ParsePointerDirective()
         {
-            ExpectDirective("pointer");
+            Token t = ExpectDirective("pointer");
             CalculationExpression expr = ParseCalculationExpression();
-            return new PointerDirective(expr);
+            return new PointerDirective(t, expr);
         }
 
         private StringDirective ParseStringmodeDirective()
         {
-            ExpectDirective("stringmode");
+            Token t = ExpectDirective("stringmode");
             string name = ParseName().Name;
             string text = Expect(TokenKind.STRING).Value.ToString().Trim('"');
             if (tokens[pos].Kind == TokenKind.NEWLINE)
@@ -489,12 +492,12 @@ namespace octo
                 body.Add(ParseStatement());
             }
             Expect(TokenKind.RIGHT_CURLY_BRACE);
-            return new StringDirective(name, text, body.ToArray());
+            return new StringDirective(t, name, text, body.ToArray());
         }
 
         private AssertDirective ParseAssertDirective()
         {
-            ExpectDirective("assert");
+            Token t = ExpectDirective("assert");
             string? message = null;
             if (tokens[pos].Kind == TokenKind.STRING)
             {
@@ -508,12 +511,12 @@ namespace octo
             Expect(TokenKind.LEFT_CURLY_BRACE);
             CalculationExpression expr = ParseCalculationExpression();
             Expect(TokenKind.RIGHT_CURLY_BRACE);
-            return new AssertDirective(expr, message);
+            return new AssertDirective(t, expr, message);
         }
         
         private IncludeDirective ParseIncludeDirective()
         {
-            ExpectDirective("include");
+            Token t = ExpectDirective("include");
             string path = Expect(TokenKind.STRING).Value.ToString().Trim('"');
             if (tokens[pos].Kind == TokenKind.DIMENSION)
             {
@@ -524,15 +527,16 @@ namespace octo
                     throw new ParseException(tokens[pos], "expected <num>x<num> for dimensions");
                 }
                 pos++;
-                return new PixelInclude(path, parts[0], parts[1]);
+                return new PixelInclude(t, path, parts[0], parts[1]);
             }
-            return new FileInclude(path);
+            return new FileInclude(t, path);
         }
         #endregion
 
         #region calculations
         private CalculationExpression ParseCalculationExpression()
         {
+            Token firstToken = tokens[pos];
             string first = tokens[pos].Value.ToString();
             if (Lexer.CalcUnaryOperators.Contains(first))
             {
@@ -542,7 +546,7 @@ namespace octo
                     bool text;
                     if (tokens[pos].Kind == TokenKind.STRING)
                     {
-                        name = Expect(TokenKind.STRING).Value.ToString();
+                        name = Expect(TokenKind.STRING).Value.ToString().Trim('"');
                         text = true;
                     }
                     else if (tokens[pos].Kind == TokenKind.NAME ||
@@ -550,12 +554,13 @@ namespace octo
                     {
                         name = tokens[pos].Value.ToString();
                         text = false;
+                        pos++;
                     }
                     else
                     {
                         throw new ParseException(tokens[pos], "expect name or string after strlen operator");
                     }
-                    return new CalculationStringLengthOperation(name, text);
+                    return new CalculationStringLengthOperation(firstToken, name, text);
                 }
                 CalculationUnaryOperation.UnaryOperator op = first switch
                 {
@@ -577,7 +582,7 @@ namespace octo
                 };
                 pos++;
                 CalculationExpression expr = ParseCalculationExpression();
-                return new CalculationUnaryOperation(expr, op);
+                return new CalculationUnaryOperation(firstToken, expr, op);
             }
             CalculationExpression terminal = ParseCalculationTerminal();
             string follow = tokens[pos].Value.ToString();
@@ -608,13 +613,14 @@ namespace octo
                 };
                 pos++;
                 CalculationExpression expr = ParseCalculationExpression();
-                return new CalculationBinaryOperation(terminal, expr, op);
+                return new CalculationBinaryOperation(firstToken, terminal, expr, op);
             }
             return terminal;
         }
 
         private CalculationExpression ParseCalculationTerminal()
         {
+            Token first = tokens[pos];
             if (tokens[pos].Kind == TokenKind.LEFT_PAREN)
             {
                 pos++;
@@ -625,13 +631,13 @@ namespace octo
             if (tokens[pos].Kind == TokenKind.NUMBER)
             {
                 pos++;
-                return new CalculationNumber(Convert.ToDouble(tokens[pos-1].Value));
+                return new CalculationNumber(first, Convert.ToDouble(tokens[pos-1].Value));
             }
             if (tokens[pos].Kind == TokenKind.NAME ||
                 tokens[pos].Kind == TokenKind.CONSTANT)
             {
                 pos++;
-                return new CalculationName(tokens[pos-1].Value.ToString());
+                return new CalculationName(first, tokens[pos-1].Value.ToString());
             }
             throw new ParseException(tokens[pos], "unable to find terminal token");
         }
@@ -645,7 +651,7 @@ namespace octo
             pos++;
             if (opText == "key" || opText == "-key")
             {
-                return new KeystrokeCondition(left, opText == "key");
+                return new KeystrokeCondition(left.FirstToken, left, opText == "key");
             }
             RValue right = ParseRValue();
             BinaryConditionalExpression.ConditionalOperator op = opText switch
@@ -658,12 +664,12 @@ namespace octo
                 ">=" => BinaryConditionalExpression.ConditionalOperator.GreaterThanOrEqualTo,
                 _ => throw new ParseException(tokens[pos-2], $"unknown operator {opText}")
             };
-            return new BinaryConditionalExpression(left, op, right);
+            return new BinaryConditionalExpression(left.FirstToken, left, op, right);
         }
 
         private Statement ParseIf(bool allowDanglingIf)
         {
-            ExpectKeyword("if");
+            Token t = ExpectKeyword("if");
             ConditionalExpression expr = ParseCondition();
             if (tokens[pos].Kind == TokenKind.NEWLINE)
             {
@@ -677,12 +683,12 @@ namespace octo
                 if (keyword == "end")
                 {
                     Expect(TokenKind.NEWLINE);
-                    return new IfElseBlock(expr, thenBlock, []);
+                    return new IfElseBlock(t, expr, thenBlock, []);
                 }
                 Expect(TokenKind.NEWLINE);
                 Statement[] elseBlock = ParseStatementsUntilKeyword("end");
                 Expect(TokenKind.NEWLINE);
-                return new IfElseBlock(expr, thenBlock, elseBlock);
+                return new IfElseBlock(t, expr, thenBlock, elseBlock);
             }
             else if (tokens[pos].Value.ToString() == "then")
             {
@@ -704,35 +710,35 @@ namespace octo
                     {
                         throw new ParseException(tokens[pos], "dangling if not allowed in non-loop context");
                     }
-                    return new IfStatement(expr);
+                    return new IfStatement(t, expr);
                 }
 
                 Statement body = ParseStatement();
-                return new IfStatement(expr, body);
+                return new IfStatement(t, expr, body);
             }
             throw new ParseException(tokens[pos], "expected keyword 'then' or 'begin' after 'if'");
         }
 
         private LoopStatement ParseLoop()
         {
-            ExpectKeyword("loop");
+            Token t = ExpectKeyword("loop");
             if (tokens[pos].Kind == TokenKind.KEYWORD && tokens[pos].Value.ToString() == "again")
             {
                 pos++;
-                return ExpectNewlineAndReturn(new LoopStatement([]));
+                return ExpectNewlineAndReturn(new LoopStatement(t, []));
             }
             Expect(TokenKind.NEWLINE);
             Statement[] body = ParseStatementsUntilKeyword("again");
             Expect(TokenKind.NEWLINE);
-            return new LoopStatement(body);
+            return new LoopStatement(t, body);
         }
 
         private WhileStatement ParseWhileStatement()
         {
-            ExpectKeyword("while");
+            Token t = ExpectKeyword("while");
             ConditionalExpression expr = ParseCondition();
             Statement body = ParseStatement();
-            return new WhileStatement(expr, body);
+            return new WhileStatement(t, expr, body);
         }
         #endregion
 
@@ -771,17 +777,18 @@ namespace octo
         #region atoms
         private GenericRegisterReference ParseRegisterReference()
         {
+            Token first = tokens[pos];
             string? text = tokens[pos].Value.ToString() ??
                 throw new ParseException(tokens[pos], "null token");
             if (tokens[pos].Kind == TokenKind.REGISTER && text.StartsWith('v'))
             {
                 pos++;
-                return new GenericRegisterReference(Convert.ToByte(text[1..], 16));
+                return new GenericRegisterReference(first, Convert.ToByte(text[1..], 16));
             }
             else if (tokens[pos].Kind == TokenKind.NAME)
             {
                 pos++;
-                return new GenericRegisterReference(text);
+                return new GenericRegisterReference(first, text);
             }
             throw new ParseException(tokens[pos], "expected register reference");
         }
@@ -792,7 +799,7 @@ namespace octo
             {
                 if (tokens[pos].Value != null)
                 {
-                    return new NamedReference(tokens[pos++].Value.ToString());
+                    return new NamedReference(tokens[pos], tokens[pos++].Value.ToString());
                 }
                 throw new ParseException(tokens[pos], "token is null");
             }
@@ -805,7 +812,7 @@ namespace octo
             {
                 if (tokens[pos].Value != null)
                 {
-                    return new NumericLiteral(Convert.ToUInt16(tokens[pos++].Value.ToString()));
+                    return new NumericLiteral(tokens[pos], Convert.ToUInt16(tokens[pos++].Value.ToString()));
                 }
                 throw new ParseException(tokens[pos], "token is null");
             }
@@ -835,7 +842,7 @@ namespace octo
             return tokens[pos++];
         }
 
-        private void ExpectKeyword(string text)
+        private Token ExpectKeyword(string text)
         {
             Token token = Expect(TokenKind.KEYWORD);
             if (token.Value == null)
@@ -846,9 +853,10 @@ namespace octo
             {
                 throw new ParseException(token, $"expected keyword '{text}'");
             }
+            return token;
         }
 
-        private void ExpectDirective(string text)
+        private Token ExpectDirective(string text)
         {
             Token token = Expect(TokenKind.DIRECTIVE);
             if (token.Value == null)
@@ -860,6 +868,7 @@ namespace octo
             {
                 throw new ParseException(token, $"expected directive '{text}'");
             }
+            return token;
         }
 
         private T ExpectNewlineAndReturn<T>(T t)
