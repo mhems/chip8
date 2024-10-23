@@ -611,31 +611,6 @@ namespace octo
             return $":assert {Message} {Expression}";
         }
     }
-
-    public abstract class IncludeDirective(Token token, string filename) : Directive(token)
-    {
-        public string FileName { get; } = filename;
-
-        public override string ToString()
-        {
-            return $":include \"{FileName}\"";
-        }
-    }
-
-    public class FileInclude(Token token, string filename) : IncludeDirective(token, filename)
-    {
-    }
-
-    public class PixelInclude(Token token, string filename, byte width, byte height) : IncludeDirective(token, filename)
-    {
-        public byte Width { get; } = width;
-        public byte Height { get; } = height;
-
-        public override string ToString()
-        {
-            return base.ToString() + $" {Width}x{Height}";
-        }
-    }
     #endregion
 
     #region conditional expression

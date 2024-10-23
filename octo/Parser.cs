@@ -274,7 +274,6 @@ namespace octo
                 ":pointer" => ParsePointerDirective(),
                 ":stringmode" => ParseStringmodeDirective(),
                 ":assert" => ParseAssertDirective(),
-                ":include" => ParseIncludeDirective(),
                 ":breakpoint" => ParseBreakpointDirective(),
                 ":monitor" => ParseMonitorDirective(),
                 _ => throw new ParseException(tokens[pos], "no directive found")
@@ -512,24 +511,6 @@ namespace octo
             CalculationExpression expr = ParseCalculationExpression();
             Expect(TokenKind.RIGHT_CURLY_BRACE);
             return new AssertDirective(t, expr, message);
-        }
-        
-        private IncludeDirective ParseIncludeDirective()
-        {
-            Token t = ExpectDirective("include");
-            string path = Expect(TokenKind.STRING).Value.ToString().Trim('"');
-            if (tokens[pos].Kind == TokenKind.DIMENSION)
-            {
-                string text = tokens[pos].Value.ToString();
-                byte[] parts = text.Split('x').Select(x => Byte.Parse(x)).ToArray();
-                if (parts.Length != 2)
-                {
-                    throw new ParseException(tokens[pos], "expected <num>x<num> for dimensions");
-                }
-                pos++;
-                return new PixelInclude(t, path, parts[0], parts[1]);
-            }
-            return new FileInclude(t, path);
         }
         #endregion
 

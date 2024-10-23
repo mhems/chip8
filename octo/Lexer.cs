@@ -23,8 +23,6 @@ namespace octo
      *            | ':pointer' constExpr
      *            | ':stringmode' NAME STRING '{' statement+ '}'
      *            | ':assert' STRING? '{' constExpr '}'
-     *            | ':include' STRING
-     *            | ':include' STRING dimension
      * statement := 'return'
      *             | ';'
      *             | 'clear'
@@ -111,7 +109,6 @@ namespace octo
      *            | terminal 'pow' constExpr
      *            | terminal
      * terminal := NUMBER | NAME | '(' constExpr ')'
-     * dimension := NUMBER 'x' NUMBER
      * v_register := V_REGISTER | NAME
      * V_REGISTER := 'v[0-9a-fA-F]'
      * NAME := [a-zA-Z0-9-_]+
@@ -151,8 +148,7 @@ namespace octo
         public const string DecimalNumberLiteralRegex = "^-?(0|([1-9][0-9]*))$";
         public const string BinaryNumberLiteralRegex = "^0b[01]+$";
         public const string HexNumberLiteralRegex = "^0x[0-9a-fA-F]+$";
-        public const string NameRegex = "^[a-z0-9][a-z0-9_-]*$";
-        public const string DimensionRegex = "^[1-9][0-9]*x[1-9][0-9]*$";
+        public const string NameRegex = "^[a-z0-9_-]+$";
 
         public static readonly HashSet<string> Keywords = [
             "return",
@@ -190,7 +186,6 @@ namespace octo
             "calc",
             "byte",
             "stringmode",
-            "include",
             "pointer",
             "breakpoint",
             "monitor"
@@ -301,7 +296,6 @@ namespace octo
             LEFT_PAREN,
             RIGHT_PAREN,
             STRING,
-            DIMENSION
         }
 
         public readonly struct Token(uint line, object value, TokenKind kind)
@@ -402,24 +396,6 @@ namespace octo
             {
                 return new Token(lineno, token, TokenKind.RIGHT_PAREN);
             }
-            else if (Operators.Contains(token) ||
-                CalcUnaryOperators.Contains(token) ||
-                CalcBinaryOperators.Contains(token))
-            {
-                return new Token(lineno, token, TokenKind.OPERATOR);
-            }
-            else if (token.StartsWith(':'))
-            {
-                string remainder = token[1..];
-                if (Directives.Contains(remainder))
-                {
-                    return new Token(lineno, token, TokenKind.DIRECTIVE);
-                }
-                else
-                {
-                    throw new LexException(lineno, $"unknown directive ':{remainder}'");
-                }
-            }
             else if (Keywords.Contains(token) || CalcKeywords.Contains(token))
             {
                 return new Token(lineno, token, TokenKind.KEYWORD);
@@ -427,10 +403,6 @@ namespace octo
             else if (Constants.Contains(token) || CalcKeywords.Contains(token))
             {
                 return new Token(lineno, token, TokenKind.CONSTANT);
-            }
-            else if (Regex.IsMatch(token, DimensionRegex))
-            {
-                return new Token(lineno, token, TokenKind.DIMENSION);
             }
             else if (Regex.IsMatch(token, HexNumberLiteralRegex))
             {
@@ -455,6 +427,24 @@ namespace octo
             else if (Regex.IsMatch(token, NameRegex, RegexOptions.IgnoreCase))
             {
                 return new Token(lineno, token, TokenKind.NAME);
+            }
+            else if (Operators.Contains(token) ||
+                     CalcUnaryOperators.Contains(token) ||
+                     CalcBinaryOperators.Contains(token))
+            {
+                return new Token(lineno, token, TokenKind.OPERATOR);
+            }
+            else if (token.StartsWith(':'))
+            {
+                string remainder = token[1..];
+                if (Directives.Contains(remainder))
+                {
+                    return new Token(lineno, token, TokenKind.DIRECTIVE);
+                }
+                else
+                {
+                    throw new LexException(lineno, $"unknown directive ':{remainder}'");
+                }
             }
             else
             {
