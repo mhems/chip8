@@ -30,7 +30,7 @@ namespace octo
             return "return";
         }
     }
-    
+
     public class ClearStatement(Token token) : Statement(token)
     {
         public override string ToString()
@@ -88,34 +88,29 @@ namespace octo
 
     public abstract class JumpStatement(Token token, bool immediate) : Statement(token)
     {
-        protected bool immediate = immediate;
-        protected NamedReference? targetName;
-        protected NumericLiteral? targetBaseAddress;
+        public bool Immediate { get; } = immediate;
+        public NamedReference? TargetName { get; }
+        public NumericLiteral? TargetBaseAddress { get; }
 
-        public JumpStatement(Token token, NamedReference target, bool immediate) : this(token, immediate) { targetName = target; }
-        public JumpStatement(Token token, NumericLiteral address, bool immediate) : this(token, immediate) { targetBaseAddress = address; }
+        public JumpStatement(Token token, NamedReference target, bool immediate) : this(token, immediate) { TargetName = target; }
+        public JumpStatement(Token token, NumericLiteral address, bool immediate) : this(token, immediate) { TargetBaseAddress = address; }
+
+        public override string ToString()
+        {
+            return $"jump{(Immediate ? "" : "0")} {TargetName?.ToString() ?? TargetBaseAddress?.ToString() ?? "???"}";
+        }
     }
 
     public class JumpImmediateStatement : JumpStatement
     {
         public JumpImmediateStatement(Token token, NamedReference target) : base(token, target, true) { }
         public JumpImmediateStatement(Token token, NumericLiteral address) : base(token, address, true) { }
-
-        public override string ToString()
-        {
-            return $"jump {targetName?.ToString() ?? targetBaseAddress?.ToString() ?? "???"}";
-        }
     }
 
     public class JumpAdditiveStatement : JumpStatement
     {
         public JumpAdditiveStatement(Token token, NamedReference target) : base(token, target, false) { }
         public JumpAdditiveStatement(Token token, NumericLiteral address) : base(token, address, false) { }
-
-        public override string ToString()
-        {
-            return $"jump0 {targetName?.ToString() ?? targetBaseAddress?.ToString() ?? "???"}";
-        }
     }
 
     public class MacroInvocation(Token token, string name, string[] args) : Statement(token)
@@ -531,15 +526,15 @@ namespace octo
         }
     }
 
-    public class MacroDefinition(Token token, string name, RValue[] arguments, Statement[] body) : Directive(token)
+    public class MacroDefinition(Token token, string name, string[] arguments, Statement[] body) : Directive(token)
     {
         public string Name { get; } = name;
-        public RValue[] Arguments { get; } = arguments;
+        public string[] Arguments { get; } = arguments;
         public Statement[] Body { get; } = body;
 
         public override string ToString()
         {
-            return $"{Name} {string.Join(" ", Arguments.Select(a => a.ToString()))} {{...}}";
+            return $"{Name} {string.Join(" ", Arguments)} {{...}}";
         }
     }
 
@@ -667,7 +662,12 @@ namespace octo
     #endregion
 
     #region control flow statements
-    public class IfStatement(Token token, ConditionalExpression expr, Statement? s = null) : Statement(token)
+    public abstract class ControlFlowStatement(Token token) : Statement(token)
+    {
+
+    }
+    
+    public class IfStatement(Token token, ConditionalExpression expr, Statement? s = null) : ControlFlowStatement(token)
     {
         public ConditionalExpression Condition { get; } = expr;
         public Statement? Body { get; } = s;
@@ -678,7 +678,12 @@ namespace octo
         }
     }
 
-    public class IfElseBlock(Token token, ConditionalExpression expr, Statement[] thenBlock, Statement[] elseBlock) : Statement(token)
+    public class IfElseBlock(
+        Token token,
+        ConditionalExpression expr,
+        Statement[] thenBlock,
+        Statement[] elseBlock) :
+        ControlFlowStatement(token)
     {
         public ConditionalExpression Condition { get; } = expr;
         public Statement[] ThenBody { get; } = thenBlock;
@@ -690,7 +695,7 @@ namespace octo
         }
     }
 
-    public class LoopStatement(Token token, Statement[] body) : Statement(token)
+    public class LoopStatement(Token token, Statement[] body) : ControlFlowStatement(token)
     {
         public Statement[] Body { get; } = body;
 
@@ -700,7 +705,7 @@ namespace octo
         }
     }
 
-    public class WhileStatement(Token token, ConditionalExpression expr, Statement s) : Statement(token)
+    public class WhileStatement(Token token, ConditionalExpression expr, Statement s) : ControlFlowStatement(token)
     {
         public ConditionalExpression Condition { get; } = expr;
         public Statement Statement { get; } = s;

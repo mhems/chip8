@@ -98,7 +98,20 @@ namespace octo
                 case "sprite":
                     GenericRegisterReference x = ParseRegisterReference();
                     GenericRegisterReference y = ParseRegisterReference();
-                    RValue height = ParseNumber();
+                    RValue height;
+                    if (tokens[pos].Kind == TokenKind.NUMBER)
+                    {
+                        height = ParseNumber();
+                    }
+                    else if (tokens[pos].Kind == TokenKind.NAME ||
+                        tokens[pos].Kind == TokenKind.CONSTANT)
+                    {
+                        height = ParseName();
+                    }
+                    else
+                    {
+                        throw new ParseException(tokens[pos], "expected number or name of number");
+                    }
                     return ExpectNewlineAndReturn(new SpriteStatement(first, x, y, height));
                 case "jump":
                     if (tokens[pos].Kind == TokenKind.NAME)
@@ -412,11 +425,11 @@ namespace octo
         {
             Token t = ExpectDirective("macro");
             string name = ParseName().Name;
-            List<RValue> parameters = [];
+            List<string> parameters = [];
             while (tokens[pos].Kind != TokenKind.LEFT_CURLY_BRACE &&
                 tokens[pos].Kind != TokenKind.NEWLINE)
             {
-                parameters.Add(ParseRValue());
+                parameters.Add(ParseName().Name);
             }
             if (tokens[pos].Kind == TokenKind.NEWLINE)
             {
