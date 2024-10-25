@@ -295,14 +295,14 @@ namespace octo
             return directive;
         }
 
-        private DebuggingDirective ParseBreakpointDirective()
+        private BreakpointDirective ParseBreakpointDirective()
         {
             Token t = ExpectDirective("breakpoint");
             string name = Expect(TokenKind.NAME).Value.ToString();
-            return new DebuggingDirective(t, ":breakpoint " + name);
+            return new BreakpointDirective(t, name);
         }
 
-        private DebuggingDirective ParseMonitorDirective()
+        private MonitorDirective ParseMonitorDirective()
         {
             Token t = ExpectDirective("monitor");
             if (tokens[pos].Kind == TokenKind.NUMBER)
@@ -324,7 +324,7 @@ namespace octo
                 default:
                     throw new ParseException(tokens[pos], "monitor directive must end with number, name, or string");
             }
-            return new DebuggingDirective(t, ":monitor " + string.Join(' ', tokens[(pos-2)..pos].Select(t => t.Value.ToString())));
+            return new MonitorDirective(t, string.Join(' ', tokens[(pos-2)..pos].Select(t => t.Value.ToString())));
         }
 
         private Alias ParseAliasDirective()
@@ -370,8 +370,12 @@ namespace octo
         private FunctionCall ParseFunctionCallDirective()
         {
             Token t = ExpectDirective("call");
+            if (tokens[pos].Kind == TokenKind.NAME)
+            {
+                return new FunctionCallByName(t, ParseName());
+            }
             CalculationExpression expr = ParseCalculationExpression();
-            return new FunctionCall(t, expr);
+            return new FunctionCallByNumber(t, expr);
         }
 
         private ConstantDirective ParseConstantDirective()
@@ -483,8 +487,12 @@ namespace octo
         private PointerDirective ParsePointerDirective()
         {
             Token t = ExpectDirective("pointer");
+            if (t.Kind == TokenKind.NAME)
+            {
+                return new NamedPointerDirective(t, ParseName());
+            }
             CalculationExpression expr = ParseCalculationExpression();
-            return new PointerDirective(t, expr);
+            return new PointerExpressionDirective(t, expr);
         }
 
         private StringDirective ParseStringmodeDirective()

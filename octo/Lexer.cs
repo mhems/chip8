@@ -20,7 +20,7 @@ namespace octo
      *            | ':calc' NAME '{' constExpr '}'
      *            | ':byte' (NAME | NUMBER)
      *            | ':byte' '{' calcExpr '}'
-     *            | ':pointer' constExpr
+     *            | ':pointer' (NAME | constExpr)
      *            | ':stringmode' NAME STRING '{' statement+ '}'
      *            | ':assert' STRING? '{' constExpr '}'
      * statement := 'return'

@@ -9,6 +9,7 @@ using System.Net;
 using System.Xml.Linq;
 using Microsoft.Win32;
 using System.Drawing;
+using System.Linq.Expressions;
 
 namespace octo
 {
@@ -183,15 +184,15 @@ namespace octo
 
     public class MemoryAssignment : Assignment
     {
-        protected NumericLiteral? address;
-        protected NamedReference? name;
+        public NumericLiteral? Address { get; }
+        public NamedReference? Name { get; }
 
-        public MemoryAssignment(Token token, NumericLiteral address) : base(token) { this.address = address; }
-        public MemoryAssignment(Token token, NamedReference name) : base(token) { this.name = name; }
+        public MemoryAssignment(Token token, NumericLiteral address) : base(token) { Address = address; }
+        public MemoryAssignment(Token token, NamedReference name) : base(token) { Name = name; }
 
         public override string ToString()
         {
-            return $"i := {address?.ToString() ?? name?.ToString() ?? "???"}";
+            return $"i := {Address?.ToString() ?? Name?.ToString() ?? "???"}";
         }
     }
 
@@ -381,7 +382,8 @@ namespace octo
 
     public class ImmediateAdditionAssignment(
         Token token,
-        GenericRegisterReference reg, RValue value) :
+        GenericRegisterReference reg,
+        RValue value) :
         ImmediateAssignment(token, reg, value, Operator.Addition)
     {
     }
@@ -416,7 +418,17 @@ namespace octo
 
     }
 
-    public class DebuggingDirective(Token token, string text) : Directive(token)
+    public class BreakpointDirective(Token token, string name) : Directive(token)
+    {
+        public string Name { get; } = name;
+
+        public override string ToString()
+        {
+            return $":breakpoint {Name}";
+        }
+    }
+
+    public class MonitorDirective(Token token, string text) : Directive(token)
     {
         private readonly string text = text;
 
@@ -461,7 +473,21 @@ namespace octo
         }
     }
 
-    public class FunctionCall(Token token, CalculationExpression expr) : Directive(token)
+    public abstract class FunctionCall(Token token) : Directive(token)
+    {
+    }
+
+    public class FunctionCallByName(Token token, NamedReference name) : FunctionCall(token)
+    {
+        public NamedReference Name { get; } = name;
+
+        public override string ToString()
+        {
+            return $":call {Name}";
+        }
+    }
+
+    public class FunctionCallByNumber(Token token, CalculationExpression expr) : FunctionCall(token)
     {
         public CalculationExpression Expression { get; } = expr;
 
@@ -574,7 +600,21 @@ namespace octo
         }
     }
 
-    public class PointerDirective(Token token, CalculationExpression expr) : Directive(token)
+    public abstract class PointerDirective(Token token) : Directive(token)
+    {
+    }
+
+    public class NamedPointerDirective(Token token, NamedReference name) : PointerDirective(token)
+    {
+        public NamedReference Name { get; } = name;
+
+        public override string ToString()
+        {
+            return $":pointer {Name}";
+        }
+    }
+
+    public class PointerExpressionDirective(Token token, CalculationExpression expr) : PointerDirective(token)
     {
         public CalculationExpression Expression { get; } = expr;
 
@@ -730,15 +770,15 @@ namespace octo
         CalculationBinaryOperation.BinaryOperator @operator)
         : CalculationExpression(token)
     {
-        public readonly CalculationExpression lhs = lhs;
-        public readonly CalculationExpression rhs = rhs;
-        public readonly BinaryOperator @operator = @operator;
+        public CalculationExpression Left { get; } = lhs;
+        public CalculationExpression Right { get; } = rhs;
+        public BinaryOperator Operator { get; } = @operator;
 
         public override double Interpret()
         {
-            double l = lhs.Interpret();
-            double r = rhs.Interpret();
-            return @operator switch
+            double l = Left.Interpret();
+            double r = Right.Interpret();
+            return Operator switch
             {
                 BinaryOperator.Addition => l + r,
                 BinaryOperator.Subtraction => l - r,
@@ -793,12 +833,12 @@ namespace octo
 
         public override string ToString()
         {
-            if (@operator == BinaryOperator.Minimum ||
-                @operator == BinaryOperator.Maximum)
+            if (Operator == BinaryOperator.Minimum ||
+                Operator == BinaryOperator.Maximum)
             {
-                return $"{@operator.ToString().ToLower()[..3]}({lhs}, {rhs})";
+                return $"{Operator.ToString().ToLower()[..3]}({Left}, {Right})";
             }
-            return $"({lhs} {operatorText[@operator]} {rhs})";
+            return $"({Left} {operatorText[Operator]} {Right})";
         }
 
         private static UInt32 UInt32Wrapper(double l, double r, Func<UInt32, UInt32, UInt32> function)
@@ -839,13 +879,13 @@ namespace octo
         CalculationUnaryOperation.UnaryOperator @operator)
         : CalculationExpression(token)
     {
-        public readonly CalculationExpression expr = expr;
-        public readonly UnaryOperator @operator = @operator;
+        public CalculationExpression Expression { get; } = expr;
+        public UnaryOperator Operator { get; } = @operator;
 
         public override double Interpret()
         {
-            double e = expr.Interpret();
-            return @operator switch
+            double e = Expression.Interpret();
+            return Operator switch
             {
                 UnaryOperator.NumericalNegation => -e,
                 UnaryOperator.BitwiseNegation => ~Convert.ToUInt32(e),
@@ -868,7 +908,7 @@ namespace octo
 
         public override string ToString()
         {
-            return $"({operatorText[@operator]}{expr})";
+            return $"({operatorText[Operator]}{Expression})";
         }
 
         public enum UnaryOperator
