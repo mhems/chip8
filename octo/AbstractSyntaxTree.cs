@@ -1,15 +1,4 @@
 ﻿using static octo.Lexer;
-using System.Text.RegularExpressions;
-using System.Text;
-using System.Numerics;
-using System;
-using System.Reflection;
-using static octo.ImmediateAssignment;
-using System.Net;
-using System.Xml.Linq;
-using Microsoft.Win32;
-using System.Drawing;
-using System.Linq.Expressions;
 
 namespace octo
 {
@@ -121,7 +110,7 @@ namespace octo
 
         public override string ToString()
         {
-            return $"name {string.Join(", ", args)}";
+            return $"{MacroName} {string.Join(' ', args)}";
         }
     }
 
@@ -272,7 +261,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.Assignment)
+        RegisterAssignment(token, dest, src, AssignmentOperator.Assignment)
     {
 
     }
@@ -281,7 +270,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.Addition)
+        RegisterAssignment(token, dest, src, AssignmentOperator.Addition)
     {
 
     }
@@ -290,7 +279,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.Subtraction)
+        RegisterAssignment(token, dest, src, AssignmentOperator.Subtraction)
     {
 
     }
@@ -299,7 +288,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.ReverseSubtraction)
+        RegisterAssignment(token, dest, src, AssignmentOperator.ReverseSubtraction)
     {
 
     }
@@ -308,7 +297,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.And)
+        RegisterAssignment(token, dest, src, AssignmentOperator.And)
     {
 
     }
@@ -317,7 +306,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.Or)
+        RegisterAssignment(token, dest, src, AssignmentOperator.Or)
     {
 
     }
@@ -326,7 +315,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.Xor)
+        RegisterAssignment(token, dest, src, AssignmentOperator.Xor)
     {
 
     }
@@ -335,7 +324,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.LeftShift)
+        RegisterAssignment(token, dest, src, AssignmentOperator.LeftShift)
     {
 
     }
@@ -344,7 +333,7 @@ namespace octo
         Token token,
         GenericRegisterReference dest,
         GenericRegisterReference src) :
-        RegisterAssignment(token, dest, src, RegisterAssignment.AssignmentOperator.RightShift)
+        RegisterAssignment(token, dest, src, AssignmentOperator.RightShift)
     {
 
     }
@@ -354,7 +343,7 @@ namespace octo
         Token token,
         GenericRegisterReference reg,
         RValue value,
-        Operator op = Operator.Assignment) : Assignment(token)
+        ImmediateAssignment.Operator op = ImmediateAssignment.Operator.Assignment) : Assignment(token)
     {
         public GenericRegisterReference DestinationRegister { get; } = reg;
         public RValue Value { get; } = value;
@@ -372,7 +361,7 @@ namespace octo
             Subtraction,
         }
 
-        private static readonly Dictionary<Operator, string> operatorText = new()
+        internal static readonly Dictionary<Operator, string> operatorText = new()
         {
             {Operator.Assignment, ":="},
             {Operator.Addition, "+="},
@@ -393,6 +382,38 @@ namespace octo
         GenericRegisterReference reg,
         RValue value) :
         ImmediateAssignment(token, reg, value, Operator.Subtraction)
+    {
+    }
+
+    public class AmbiguousAssignment(
+       Token token,
+       GenericRegisterReference reg,
+       NamedReference name,
+       ImmediateAssignment.Operator op = ImmediateAssignment.Operator.Assignment) : Assignment(token)
+    {
+        public GenericRegisterReference DestinationRegister { get; } = reg;
+        public NamedReference Name { get; } = name;
+        public ImmediateAssignment.Operator Op { get; protected set; } = op;
+
+        public override string ToString()
+        {
+            return $"{DestinationRegister} {ImmediateAssignment.operatorText[Op]} {Name}";
+        }
+    }
+
+    public class AmbiguousAdditionAssignment(
+        Token token,
+        GenericRegisterReference reg,
+        NamedReference name) :
+        AmbiguousAssignment(token, reg, name, ImmediateAssignment.Operator.Addition)
+    {
+    }
+
+    public class AmbiguousSubtractionAssignment(
+        Token token,
+        GenericRegisterReference reg,
+        NamedReference name) :
+        AmbiguousAssignment(token, reg, name, ImmediateAssignment.Operator.Subtraction)
     {
     }
 
@@ -624,15 +645,15 @@ namespace octo
         }
     }
 
-    public class StringDirective(Token token, string name, string text, Statement[] body) : Directive(token)
+    public class StringDirective(Token token, string name, string alphabet, Statement[] body) : Directive(token)
     {
         public string Name { get; } = name;
-        public string Text { get; } = text;
+        public string Alphabet { get; } = alphabet;
         public Statement[] Body { get; } = body;
 
         public override string ToString()
         {
-            return $":stringmode {Name} \"{Text}\" {{...}}";
+            return $":stringmode {Name} \"{Alphabet}\" {{...}}";
         }
     }
 

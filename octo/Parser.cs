@@ -46,7 +46,7 @@ namespace octo
                 if (pos + 1 < tokens.Count)
                 {
                     string next = tokens[pos + 1].Value.ToString();
-                    if (next.Length > 1 && next[^1] == '=')
+                    if (next.Length > 1 && (next == "=-" || next[^1] == '='))
                     {
                         if (next != "<=" && next != ">=")
                         {
@@ -58,9 +58,18 @@ namespace octo
                     pos++;
                     while (pos < tokens.Count && tokens[pos].Kind != TokenKind.NEWLINE)
                     {
-                        args.Add(tokens[pos++].Value.ToString());
+                        Token token = tokens[pos];
+                        args.Add(token.Value.ToString().Trim('"'));
+                        pos++;
+                        if (token.Kind == TokenKind.STRING)
+                        {
+                            break;
+                        }
                     }
-                    Expect(TokenKind.NEWLINE);
+                    if (tokens[pos-1].Kind != TokenKind.STRING)
+                    {
+                        Expect(TokenKind.NEWLINE);
+                    }
                     if (args.Count == 0)
                     {
                         return new AmbiguousCall(first, name);
@@ -218,7 +227,7 @@ namespace octo
                     }
                     else
                     {
-                        return ExpectNewlineAndReturn(new ImmediateAssignment(first, dest, ParseName()));
+                        return ExpectNewlineAndReturn(new AmbiguousAssignment(first, dest, ParseName()));
                     }
                 case "+=":
                     if (tokens[pos].Kind == TokenKind.NUMBER)
@@ -231,7 +240,7 @@ namespace octo
                     }
                     else
                     {
-                        return ExpectNewlineAndReturn(new ImmediateAdditionAssignment(first, dest, ParseName()));
+                        return ExpectNewlineAndReturn(new AmbiguousAdditionAssignment(first, dest, ParseName()));
                     }
                 case "-=":
                     if (tokens[pos].Kind == TokenKind.NUMBER)
@@ -244,7 +253,7 @@ namespace octo
                     }
                     else
                     {
-                        return ExpectNewlineAndReturn(new ImmediateSubtractionAssignment(first, dest, ParseName()));
+                        return ExpectNewlineAndReturn(new AmbiguousSubtractionAssignment(first, dest, ParseName()));
                     }
                 case "=-":
                     src = ParseRegisterReference();

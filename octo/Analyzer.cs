@@ -1,4 +1,5 @@
-﻿using System.Security.Cryptography;
+﻿using System.Diagnostics.Tracing;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 
 namespace octo
@@ -6,13 +7,11 @@ namespace octo
     public class Analyzer(Statement[] statements)
     {
         private readonly Statement[] statements = statements;
-        private int posIn = 0;
-        private ushort address = 0x200;
+        private readonly List<Statement> analyzedStatements = [];
         private readonly Dictionary<string, byte> registerAliases = [];
         private readonly Dictionary<string, CalculationExpression> registerConstants = [];
         private readonly Dictionary<string, RValue> constants = [];
         private readonly HashSet<string> labels = [];
-        private readonly HashSet<string> forwardDeclarations = [];
         private readonly Dictionary<string, CalculationExpression> calcs = [];
         private readonly Dictionary<string, MacroDefinition> macroNames = [];
         private readonly Dictionary<string, uint> macroCalls = [];
@@ -25,14 +24,11 @@ namespace octo
 
         public Statement[] Analyze()
         {
-            List<Statement> compiledStatements = [];
+            CollectLabels();
 
-            // first pass aggregates names and semantics
-            while (posIn < statements.Length)
+            foreach (Statement statement in statements)
             {
-                Statement statement = statements[posIn];
                 AnalyzeUnknownStatement(statement);
-                posIn++;
             }
 
             if (!labels.Contains("main"))
@@ -40,17 +36,36 @@ namespace octo
                 throw new AnalysisException(statements[0], "program must contain a 'main' label");
             }
 
-            foreach (string decl in forwardDeclarations)
+            return analyzedStatements.ToArray();
+        }
+
+        private void CollectLabels()
+        {
+            foreach (Statement statement in statements)
             {
-                if (!labels.Contains(decl))
+                if (statement is LabelDeclaration ld)
                 {
-                    throw new AnalysisException($"a label for the forward-declared '{decl}' was never found");
+                    if (labels.Contains(ld.Name))
+                    {
+                        throw new AnalysisException(ld, $"label '{ld.Name}' already declared");
+                    }
+                    else
+                    {
+                        labels.Add(ld.Name);
+                    }
+                }
+                else if (statement is NextDirective nd)
+                {
+                    if (labels.Contains(nd.Label))
+                    {
+                        throw new AnalysisException(nd, $"label '{nd.Label}' already declared");
+                    }
+                    else
+                    {
+                        labels.Add(nd.Label);
+                    }
                 }
             }
-
-            // second pass expands macros and control flow; evaluates calculations
-
-            return compiledStatements.ToArray();
         }
 
         private void AnalyzeUnknownStatement(Statement statement)
@@ -75,6 +90,7 @@ namespace octo
  
         private void AnalyzeDirective(Directive directive)
         {
+            bool reuse = true;
             if (directive is BreakpointDirective dd)
             {
                 if (breakpoints.Contains(dd.Name))
@@ -82,26 +98,28 @@ namespace octo
                     throw new AnalysisException(dd, $"breakpoint with name '{dd.Name}' already declared");
                 }
                 breakpoints.Add(dd.Name);
+                reuse = false;
             }
             else if (directive is MonitorDirective)
             {
-
+                reuse = false;
             }
             else if (directive is RegisterAlias ra)
             {
                 VerifyNameUnique(ra, ra.Name);
                 registerAliases[ra.Name] = ra.RegisterIndex;
+                reuse = false;
             }
             else if (directive is ConstantAlias ca)
             {
                 VerifyNameUnique(ca, ca.Name);
                 // TODO assert 8 bits
                 registerConstants[ca.Name] = ca.Expression;
+                reuse = false;
             }
             else if (directive is LabelDeclaration ld)
             {
-                VerifyNameUnique(ld, ld.Name);
-                labels.Add(ld.Name);
+                VerifyNameUnique(ld, ld.Name, true);
             }
             else if (directive is FunctionCallByName fc)
             {
@@ -116,6 +134,7 @@ namespace octo
                 VerifyNameUnique(cd, cd.Name);
                 VerifyNameExistsInContext(cd.Value, true);
                 constants[cd.Name] = cd.Value;
+                reuse = false;
             }
             else if (directive is UnpackDirective ud)
             {
@@ -129,8 +148,7 @@ namespace octo
             }
             else if (directive is NextDirective nd)
             {
-                VerifyNameUnique(nd, nd.Label);
-                labels.Add(nd.Label);
+                VerifyNameUnique(nd, nd.Label, true);
                 AnalyzeUnknownStatement(nd.Statement);
             }
             else if (directive is OrgDirective od)
@@ -142,6 +160,7 @@ namespace octo
                 VerifyNameUnique(md, md.Name);
                 macroNames[md.Name] = md;
                 macroCalls[md.Name] = 0;
+                reuse = false;
             }
             else if (directive is Calculation calc)
             {
@@ -151,6 +170,7 @@ namespace octo
 
                 // add entry after analysis so self-reference is not allowed
                 calcs[calc.Name] = calc.Expression;
+                reuse = false;
             }
             else if (directive is ValueByteDirective vbd)
             {
@@ -162,14 +182,7 @@ namespace octo
             }
             else if (directive is NamedPointerDirective npd)
             {
-                try
-                {
-                    VerifyNameExistsInContext(npd.Name, true);
-                }
-                catch
-                {
-                    forwardDeclarations.Add(npd.Name.Name);
-                }
+                VerifyNameExistsInContext(npd.Name, true);
             }
             else if (directive is PointerExpressionDirective ped)
             {
@@ -177,15 +190,11 @@ namespace octo
             }
             else if (directive is StringDirective sd)
             {
+                // TODO allow overlap as long as alphabets do not
                 VerifyNameUnique(sd, sd.Name);
-                currentStringMode = sd.Name;
-                foreach (Statement statement in sd.Body)
-                {
-                    AnalyzeUnknownStatement(statement);
-                }
-                currentStringMode = null;
-
                 stringDirectives[sd.Name] = sd;
+                macroCalls[sd.Name] = 0;
+                reuse = false;
             }
             else if (directive is AssertDirective ad)
             {
@@ -195,10 +204,16 @@ namespace octo
             {
                 throw new AnalysisException(directive, "unknown directive sub-type");
             }
+
+            if (reuse)
+            {
+                analyzedStatements.Add(directive);
+            }
         }
 
         private void AnalyzeAssignment(Assignment assignment)
         {
+            bool reuse = true;
             if (assignment is LoadDelayAssignment lda)
             {
                 VerifyVRegister(lda.SourceRegister);
@@ -242,8 +257,7 @@ namespace octo
             else if (assignment is ImmediateAssignment ia)
             {
                 VerifyVRegister(ia.DestinationRegister);
-                VerifyRValue(ia.Value, false, true);
-                // TODO verify 8 bits
+                // TODO verify ia.Number is 8 bits
             }
             else if (assignment is RandomAssignment rna)
             {
@@ -251,14 +265,47 @@ namespace octo
                 VerifyRValue(rna.Mask, false, true);
                 // TODO verify 8 bits
             }
+            else if (assignment is AmbiguousAssignment aa)
+            {
+                reuse = false;
+                Assignment disambiguatedAssignment;
+                VerifyVRegister(aa.DestinationRegister);
+                if (IsVRegister(aa.Name))
+                {
+                    GenericRegisterReference reg = new(aa.Name.FirstToken, aa.Name.Name);
+                    disambiguatedAssignment = aa.Op switch
+                    {
+                        ImmediateAssignment.Operator.Assignment => new RegisterCopyAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, reg),
+                        ImmediateAssignment.Operator.Addition => new RegisterAddAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, reg),
+                        ImmediateAssignment.Operator.Subtraction => new RegisterSubtractionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, reg),
+                    };
+                }
+                else
+                {
+                    VerifyNameExistsInContext(aa.Name, true);
+                    disambiguatedAssignment = aa.Op switch
+                    {
+                        ImmediateAssignment.Operator.Assignment => new ImmediateAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, aa.Name),
+                        ImmediateAssignment.Operator.Addition => new ImmediateAdditionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, aa.Name),
+                        ImmediateAssignment.Operator.Subtraction => new ImmediateSubtractionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, aa.Name),
+                    };
+                }
+                analyzedStatements.Add(disambiguatedAssignment);
+            }
             else
             {
                 throw new AnalysisException(assignment, "unknown assignment sub-type");
+            }
+            
+            if (reuse)
+            {
+                analyzedStatements.Add(assignment);
             }
         }
 
         private void AnalyzeStatement(Statement statement)
         {
+            bool reuse = true;
             if (statement is ReturnStatement)
             {
 
@@ -299,25 +346,37 @@ namespace octo
             }
             else if (statement is MacroInvocation mi)
             {
+                reuse = false;
                 VerifyMacro(mi, mi.MacroName, mi.Arguments);
             }
             else if (statement is AmbiguousCall ac)
             {
-                if (!labels.Contains(ac.TargetName))
+                reuse = false;
+                if (labels.Contains(ac.TargetName))
                 {
-                    if (macroNames.ContainsKey(ac.TargetName))
-                    {
-                        VerifyMacro(ac, ac.TargetName, []);
-                    }
-                    else
-                    {
-                        throw new AnalysisException(ac, $"'{ac.TargetName}' does not name a known label or macro");
-                    }
+                    analyzedStatements.Add(new FunctionCallByName(ac.FirstToken, new NamedReference(ac.FirstToken, ac.TargetName)));
+                }
+                else if (stringDirectives.ContainsKey(ac.TargetName))
+                {
+                    throw new AnalysisException(ac, $"string-mode macros must be called with 1 STRING argument");
+                }
+                else if (macroNames.ContainsKey(ac.TargetName))
+                {
+                    VerifyMacro(ac, ac.TargetName, []);
+                }
+                else
+                {
+                    throw new AnalysisException(ac, $"'{ac.TargetName}' does not name a known label or macro");
                 }
             }
             else if (statement is DataDeclaration)
             {
                 // TODO verify num is 8 bits
+            }
+
+            if (reuse)
+            {
+                analyzedStatements.Add(statement);
             }
         }
 
@@ -445,7 +504,7 @@ namespace octo
             }
         }
 
-        private void VerifyNameUnique(AstNode node, string name)
+        private void VerifyNameUnique(AstNode node, string name, bool allowLabelDuplicates = false)
         {
             if (registerAliases.ContainsKey(name) || registerConstants.ContainsKey(name))
             {
@@ -455,7 +514,7 @@ namespace octo
             {
                 throw new AnalysisException(node, $"constant with name '{name}' already declared");
             }
-            if (labels.Contains(name))
+            if (!allowLabelDuplicates && labels.Contains(name))
             {
                 throw new AnalysisException(node, $"label with name '{name}' already declared");
             }
@@ -486,8 +545,11 @@ namespace octo
                     throw new AnalysisException(node, $"keyword '{name}' is not allowed in this context");
                 }
             }
+            else if (TryGetMacroSubstitution(name, out _))
+            {
+
+            }
             else if (!labels.Contains(name) &&
-                !forwardDeclarations.Contains(name) &&
                 !constants.ContainsKey(name) &&
                 !calcs.ContainsKey(name))
             {
@@ -540,7 +602,10 @@ namespace octo
                 throw new AnalysisException(value, "unknown RValue sub-type");
             }
 
-            return !IsReserved(s) && (registerAliases.ContainsKey(s) || registerConstants.ContainsKey(s));
+            return !IsReserved(s) &&
+                (registerAliases.ContainsKey(s) ||
+                 registerConstants.ContainsKey(s) ||
+                 (TryGetMacroSubstitution(s, out string name) && Regex.IsMatch(name, Lexer.VRegisterLiteralRegex)));
         }
 
         private static bool IsReserved(string name)
@@ -575,23 +640,20 @@ namespace octo
             {
 
             }
-            if (IsVRegister(value))
+            else if (IsVRegister(value))
             {
                 if (!allowRegister)
                 {
                     throw new AnalysisException(value, "register not allowed in this context");
                 }
             }
+            else if (value is NamedReference @ref)
+            {
+                VerifyNameExistsInContext(@ref, allowKeywords);
+            }
             else
             {
-                if (value is NamedReference @ref)
-                {
-                    VerifyNameExistsInContext(@ref, allowKeywords);
-                }
-                else
-                {
-                    throw new AnalysisException(value, "unknown RValue sub-type");
-                }
+                throw new AnalysisException(value, "unknown RValue sub-type");
             }
         }
 
@@ -615,17 +677,57 @@ namespace octo
                     throw new AnalysisException(node, $"macro {macroName} expected {def.Arguments.Length} arguments, {suppliedArgs} supplied");
                 }
                 Dictionary<string, string> currentScope = [];
+                macroCalls[macroName] += 1;
+                currentScope["CALLS"] = macroCalls[macroName].ToString();
                 for (int i = 0; i < def.Arguments.Length; i++)
                 {
                     currentScope[def.Arguments[i]] = suppliedArgs[i];
                 }
                 macroSubstitutions.AddFirst(currentScope);
-                macroCalls[macroName] += 1;
                 currentMacro = macroName;
-                // TODO expand and add statements, verifying each statement
-                // expansion includes substituting names (including calc exprs)
+                
+                foreach (Statement statement in def.Body)
+                {
+                    AnalyzeUnknownStatement(statement);
+                }
+
                 currentMacro = null;
                 macroSubstitutions.RemoveFirst();
+            }
+            else if (stringDirectives.TryGetValue(macroName, out StringDirective sd))
+            {
+                if (suppliedArgs.Length != 1)
+                {
+                    throw new AnalysisException(node, $"string-mode macros must be called with one string argument");
+                }
+                string text = suppliedArgs[0];
+
+                for (int i = 0; i < text.Length; i++)
+                {
+                    Dictionary<string, string> currentScope = [];
+                    currentScope["CHAR"] = ((int)text[i]).ToString();
+                    currentScope["INDEX"] = i.ToString();
+                    int value = sd.Alphabet.IndexOf(text[i]);
+                    if (value < 0)
+                    {
+                        throw new AnalysisException(node, $"char '{text[i]}' is not in alphabet '{sd.Alphabet}'");
+                    }
+                    currentScope["VALUE"] = value.ToString();
+
+                    macroSubstitutions.AddFirst(currentScope);
+                    macroCalls[macroName] += 1;
+                    currentScope["CALLS"] = macroCalls[macroName].ToString();
+                    currentMacro = macroName;
+                    currentStringMode = macroName;
+
+                    foreach (Statement statement in sd.Body)
+                    {
+                        AnalyzeUnknownStatement(statement);
+                    }
+
+                    currentMacro = null;
+                    macroSubstitutions.RemoveFirst();
+                }
             }
             else
             {
