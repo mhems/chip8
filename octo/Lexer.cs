@@ -211,28 +211,28 @@ namespace octo
             ";"
             ];
 
-        public static readonly HashSet<string> Constants = [
-            "CALLS",
-            "OCTO_KEY_1",
-            "OCTO_KEY_2",
-            "OCTO_KEY_3",
-            "OCTO_KEY_4",
-            "OCTO_KEY_Q",
-            "OCTO_KEY_W",
-            "OCTO_KEY_E",
-            "OCTO_KEY_R",
-            "OCTO_KEY_A",
-            "OCTO_KEY_S",
-            "OCTO_KEY_D",
-            "OCTO_KEY_F",
-            "OCTO_KEY_Z",
-            "OCTO_KEY_X",
-            "OCTO_KEY_C",
-            "OCTO_KEY_V",
-            "CHAR",
-            "INDEX",
-            "VALUE"
-            ];
+        public static readonly Dictionary<string, int> Constants = new (){
+            { "CALLS", 0},
+            { "OCTO_KEY_1", 0x1},
+            { "OCTO_KEY_2", 0x2},
+            { "OCTO_KEY_3", 0x3},
+            { "OCTO_KEY_4", 0xc},
+            { "OCTO_KEY_Q", 0x4},
+            { "OCTO_KEY_W", 0x5},
+            { "OCTO_KEY_E", 0x6},
+            { "OCTO_KEY_R", 0xd},
+            { "OCTO_KEY_A", 0x7},
+            { "OCTO_KEY_S", 0x8},
+            { "OCTO_KEY_D", 0x9},
+            { "OCTO_KEY_F", 0xe},
+            { "OCTO_KEY_Z", 0xa},
+            { "OCTO_KEY_X", 0x0},
+            { "OCTO_KEY_C", 0xb},
+            { "OCTO_KEY_V", 0xf},
+            { "CHAR", 0},
+            { "INDEX", 0},
+            { "VALUE", 0},
+        };
 
         public static readonly HashSet<string> CalcUnaryOperators = [
             "-",
@@ -400,21 +400,13 @@ namespace octo
             {
                 return new Token(lineno, token, TokenKind.KEYWORD);
             }
-            else if (Constants.Contains(token) || CalcKeywords.Contains(token))
+            else if (Constants.ContainsKey(token) || CalcKeywords.Contains(token))
             {
                 return new Token(lineno, token, TokenKind.CONSTANT);
             }
-            else if (Regex.IsMatch(token, HexNumberLiteralRegex))
+            else if (TryParseNumber(token, out int number))
             {
-                return new Token(lineno, Convert.ToUInt16(token[2..], 16), TokenKind.NUMBER);
-            }
-            else if (Regex.IsMatch(token, BinaryNumberLiteralRegex))
-            {
-                return new Token(lineno, Convert.ToUInt16(token[2..], 2), TokenKind.NUMBER);
-            }
-            else if (Regex.IsMatch(token, DecimalNumberLiteralRegex))
-            {
-                return new Token(lineno, Convert.ToInt32(token), TokenKind.NUMBER);
+                return new Token(lineno, number, TokenKind.NUMBER);
             }
             else if (Regex.IsMatch(token, StringLiteralRegex, RegexOptions.IgnoreCase))
             {
@@ -450,6 +442,28 @@ namespace octo
             {
                 throw new LexException(lineno, $"unknown token '{token}'");
             }
+        }
+
+        public static bool TryParseNumber(string token, out int number)
+        {
+            if (Regex.IsMatch(token, HexNumberLiteralRegex))
+            {
+                number = Convert.ToUInt16(token[2..], 16);
+            }
+            else if (Regex.IsMatch(token, BinaryNumberLiteralRegex))
+            {
+                number = Convert.ToUInt16(token[2..], 2);
+            }
+            else if (Regex.IsMatch(token, DecimalNumberLiteralRegex))
+            {
+                number = Convert.ToInt32(token);
+            }
+            else
+            {
+                number = 0;
+                return false;
+            }
+            return true;
         }
 
         private static List<Token> CoalesceNewlines(List<Token> tokens)

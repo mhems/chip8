@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics.Tracing;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace octo
 {
@@ -138,12 +139,13 @@ namespace octo
             }
             else if (directive is UnpackDirective ud)
             {
-                VerifyNameExistsInContext(ud.Name, true);
+                ud.ResolveName(ResolveNamedReference(ud.Name, true));
 
                 if (ud is UnpackNumberDirective und)
                 {
                     VerifyRValue(und.Value, false, true);
                     // TODO value is 4 bits
+                    und.Resolve(ResolveRValue(und.Value, true));
                 }
             }
             else if (directive is NextDirective nd)
@@ -175,6 +177,7 @@ namespace octo
             else if (directive is ValueByteDirective vbd)
             {
                 VerifyRValue(vbd.Value, false, true);
+                vbd.Resolve(ResolveRValue(vbd.Value, true));
             }
             else if (directive is ExpressionByteDirective ebd)
             {
@@ -182,7 +185,7 @@ namespace octo
             }
             else if (directive is NamedPointerDirective npd)
             {
-                VerifyNameExistsInContext(npd.Name, true);
+                npd.Resolve(ResolveNamedReference(npd.Name, true));
             }
             else if (directive is PointerExpressionDirective ped)
             {
@@ -214,17 +217,27 @@ namespace octo
         private void AnalyzeAssignment(Assignment assignment)
         {
             bool reuse = true;
+            GenericRegisterReference tmp;
             if (assignment is LoadDelayAssignment lda)
             {
                 VerifyVRegister(lda.SourceRegister);
+                tmp = lda.SourceRegister;
+                ResolveRegisterReference(ref tmp);
+                lda.Resolve(tmp);
             }
             else if (assignment is SaveDelayAssignment sda)
             {
                 VerifyVRegister(sda.DestinationRegister);
+                tmp = sda.DestinationRegister;
+                ResolveRegisterReference(ref tmp);
+                sda.Resolve(tmp);
             }
             else if (assignment is LoadBuzzerAssignment lba)
             {
                 VerifyVRegister(lba.SourceRegister);
+                tmp = lba.SourceRegister;
+                ResolveRegisterReference(ref tmp);
+                lba.Resolve(tmp);
             }
             else if (assignment is MemoryAssignment ma)
             {
@@ -235,35 +248,63 @@ namespace octo
                 else
                 {
                     VerifyNameExistsInContext(ma.Name, true);
+                    ma.Resolve(ResolveNamedReference(ma.Name, true));
                 }
             }
             else if (assignment is MemoryIncrementAssignment mia)
             {
                 VerifyVRegister(mia.Register);
+                tmp = mia.Register;
+                ResolveRegisterReference(ref tmp);
+                mia.Resolve(tmp);
             }
             else if (assignment is LoadCharacterAssignment lca)
             {
                 VerifyVRegister(lca.Register);
+                tmp = lca.Register;
+                ResolveRegisterReference(ref tmp);
+                lca.Resolve(tmp);
             }
             else if (assignment is KeyInputAssignment kia)
             {
                 VerifyVRegister(kia.DestinationRegister);
+                tmp = kia.DestinationRegister;
+                ResolveRegisterReference(ref tmp);
+                kia.Resolve(tmp);
             }
             else if (assignment is RegisterAssignment ra)
             {
                 VerifyVRegister(ra.DestinationRegister);
+                tmp = ra.DestinationRegister;
+                ResolveRegisterReference(ref tmp);
+                ra.ResolveDestination(tmp);
+
                 VerifyVRegister(ra.SourceRegister);
+                tmp = ra.SourceRegister;
+                ResolveRegisterReference(ref tmp);
+                ra.ResolveSource(tmp);
             }
             else if (assignment is ImmediateAssignment ia)
             {
                 VerifyVRegister(ia.DestinationRegister);
                 // TODO verify ia.Number is 8 bits
+                tmp = ia.DestinationRegister;
+                ResolveRegisterReference(ref tmp);
+                ia.ResolveDestination(tmp);
+
+                VerifyRValue(ia.Value, false, true);
+                ia.ResolveArgument(ResolveRValue(ia.Value, true));
             }
             else if (assignment is RandomAssignment rna)
             {
                 VerifyVRegister(rna.DestinationRegister);
+                tmp = rna.DestinationRegister;
+                ResolveRegisterReference(ref tmp);
+                rna.ResolveRegister(tmp);
+
                 VerifyRValue(rna.Mask, false, true);
                 // TODO verify 8 bits
+                rna.ResolveMask(ResolveRValue(rna.Mask, true));
             }
             else if (assignment is AmbiguousAssignment aa)
             {
@@ -272,7 +313,8 @@ namespace octo
                 VerifyVRegister(aa.DestinationRegister);
                 if (IsVRegister(aa.Name))
                 {
-                    GenericRegisterReference reg = new(aa.Name.FirstToken, aa.Name.Name);
+                    GenericRegisterReference reg = new(aa.Name.FirstToken, aa.Name);
+                    ResolveRegisterReference(ref reg);
                     disambiguatedAssignment = aa.Op switch
                     {
                         ImmediateAssignment.Operator.Assignment => new RegisterCopyAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, reg),
@@ -282,12 +324,12 @@ namespace octo
                 }
                 else
                 {
-                    VerifyNameExistsInContext(aa.Name, true);
+                    RValue value = ResolveNamedReference(aa.Name, true);
                     disambiguatedAssignment = aa.Op switch
                     {
-                        ImmediateAssignment.Operator.Assignment => new ImmediateAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, aa.Name),
-                        ImmediateAssignment.Operator.Addition => new ImmediateAdditionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, aa.Name),
-                        ImmediateAssignment.Operator.Subtraction => new ImmediateSubtractionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, aa.Name),
+                        ImmediateAssignment.Operator.Assignment => new ImmediateAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, value),
+                        ImmediateAssignment.Operator.Addition => new ImmediateAdditionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, value),
+                        ImmediateAssignment.Operator.Subtraction => new ImmediateSubtractionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, value),
                     };
                 }
                 analyzedStatements.Add(disambiguatedAssignment);
@@ -306,6 +348,7 @@ namespace octo
         private void AnalyzeStatement(Statement statement)
         {
             bool reuse = true;
+            GenericRegisterReference tmp;
             if (statement is ReturnStatement)
             {
 
@@ -317,14 +360,23 @@ namespace octo
             else if (statement is BcdStatement bcds)
             {
                 VerifyVRegister(bcds.Register);
+                tmp = bcds.Register;
+                ResolveRegisterReference(ref tmp);
+                bcds.Resolve(tmp);
             }
             else if (statement is LoadStatement ls)
             {
                 VerifyVRegister(ls.Register);
+                tmp = ls.Register;
+                ResolveRegisterReference(ref tmp);
+                ls.Resolve(tmp);
             }
             else if (statement is SaveStatement ss)
             {
                 VerifyVRegister(ss.Register);
+                tmp = ss.Register;
+                ResolveRegisterReference(ref tmp);
+                ss.Resolve(tmp);
             }
             else if (statement is SpriteStatement sps)
             {
@@ -332,6 +384,15 @@ namespace octo
                 VerifyVRegister(sps.YRegister);
                 VerifyRValue(sps.Height, false, true);
                 // TODO verify num is 4 bits
+                tmp = sps.XRegister;
+                ResolveRegisterReference(ref tmp);
+                sps.ResolveX(tmp);
+
+                tmp = sps.YRegister;
+                ResolveRegisterReference(ref tmp);
+                sps.ResolveY(tmp);
+
+                sps.ResolveHeight(ResolveRValue(sps.Height, true));
             }
             else if (statement is JumpStatement js)
             {
@@ -422,6 +483,10 @@ namespace octo
 
         private void AnalyzeCondition(ConditionalExpression expression)
         {
+            VerifyVRegister(expression.LeftRegister);
+
+            expression.ResolveLeft(ResolveRValue(expression.LeftRegister, true));
+
             if (expression is KeystrokeCondition kc)
             {
                 VerifyVRegister(kc.LeftRegister);
@@ -442,6 +507,7 @@ namespace octo
                 {
                     VerifyRValue(bc.RightHandOperand, true, true);
                 }
+                bc.ResolveRight(ResolveRValue(bc.RightHandOperand, true));
             }
         }
 
@@ -491,8 +557,6 @@ namespace octo
                 {
                     throw new AnalysisException(cn, "calculations cannot reference registers");
                 }
-
-                VerifyNameExistsInContext(cn, cn.Name, true);
             }
             else if (expression is CalculationNumber)
             {
@@ -534,7 +598,15 @@ namespace octo
 
         private void VerifyNameExistsInContext(AstNode node, string name, bool allowKeywords)
         {
-            if (IsReserved(name))
+            if (Lexer.TryParseNumber(name, out int number))
+            {
+
+            }
+            else if (ResolveRegisterReference(new NamedReference(node.FirstToken, name)) != null)
+            {
+
+            }
+            else if (IsReserved(name))
             {
                 if (allowKeywords)
                 {
@@ -545,9 +617,16 @@ namespace octo
                     throw new AnalysisException(node, $"keyword '{name}' is not allowed in this context");
                 }
             }
-            else if (TryGetMacroSubstitution(name, out _))
+            else if (TryGetMacroSubstitution(name, out string value))
             {
+                if (Regex.IsMatch(Lexer.VRegisterLiteralRegex, value))
+                {
 
+                }
+                else
+                {
+                    VerifyNameExistsInContext(node, value, allowKeywords);
+                }
             }
             else if (!labels.Contains(name) &&
                 !constants.ContainsKey(name) &&
@@ -555,6 +634,124 @@ namespace octo
             {
                 throw new AnalysisException(node, $"'{name}' does not name a known label, constant, or calculation");
             }
+        }
+
+        private RValue ResolveRValue(RValue value, bool allowKeywords)
+        {
+            if (value is NumericLiteral)
+            {
+                return value;
+            }
+            else if (value is GenericRegisterReference reg)
+            {
+                ResolveRegisterReference(ref reg);
+                return reg;
+            }
+            else if (value is NamedReference @ref)
+            {
+                GenericRegisterReference tmp = ResolveRegisterReference(@ref);
+                if (tmp != null)
+                {
+                    return tmp;
+                }
+                return ResolveNamedReference(@ref, allowKeywords);
+            }
+            else
+            {
+                throw new AnalysisException(value, "unknown RValue sub-type");
+            }
+        }
+
+        private GenericRegisterReference? ResolveRegisterReference(NamedReference @ref)
+        {
+            GenericRegisterReference reg = new(@ref.FirstToken, @ref);
+            if (registerAliases.TryGetValue(@ref.Name, out byte index))
+            {
+                reg.Resolve(index);
+            }
+            else if (registerConstants.TryGetValue(@ref.Name, out CalculationExpression expr))
+            {
+                reg.Resolve(expr);
+            }
+            else if (Regex.IsMatch(@ref.Name, Lexer.VRegisterLiteralRegex))
+            {
+                reg.Resolve(Convert.ToByte(@ref.Name[1..], 16));
+            }
+            else if (TryGetMacroSubstitution(@ref.Name, out string value))
+            {
+                return ResolveRegisterReference(new NamedReference(@ref.FirstToken, value));
+            }
+            else
+            {
+                return null;
+            }
+            return reg;
+        }
+
+        private void ResolveRegisterReference(ref GenericRegisterReference reg)
+        {
+            if (!reg.Index.HasValue)
+            {
+                reg = ResolveRegisterReference(reg.Name) ??
+                    throw new AnalysisException(reg, $"register name reference '{reg.Name}' could not be resolved");
+            }
+        }
+
+        private RValue ResolveNamedReference(NamedReference @ref, bool allowKeywords)
+        {
+            VerifyNameExistsInContext(@ref, allowKeywords);
+
+            if (Lexer.TryParseNumber(@ref.Name, out int number))
+            {
+                return new NumericLiteral(@ref.FirstToken, number);
+            }
+            else if (TryGetMacroSubstitution(@ref.Name, out string s))
+            {
+                NamedReference sub = new(@ref.FirstToken, s);
+                return ResolveNamedReference(sub, allowKeywords);
+            }
+            else if (IsReserved(@ref.Name))
+            {
+                return new NumericLiteral(@ref.FirstToken, Lexer.Constants[@ref.Name]);
+            }
+            else if (labels.Contains(@ref.Name))
+            {
+                @ref.ResolveToLabel();
+                return @ref;
+            }
+            else if (calcs.TryGetValue(@ref.Name, out CalculationExpression expr))
+            {
+                @ref.ResolveToExpression(expr);
+                return @ref;
+            }
+            else if (constants.TryGetValue(@ref.Name, out RValue value))
+            {
+                if (value is NumericLiteral num)
+                {
+                    return num;
+                }
+                else if (value is GenericRegisterReference reg)
+                {
+                    ResolveRegisterReference(ref reg);
+                    return reg;
+                }
+                else if (value is NamedReference named)
+                {
+                    return ResolveNamedReference(named, allowKeywords);
+                }
+                else
+                {
+                    throw new AnalysisException(@ref, "unknown RValue sub-type");
+                }
+            }
+
+            GenericRegisterReference? tmp = ResolveRegisterReference(@ref);
+            if (tmp != null)
+            {
+                return tmp;
+            }
+
+            throw new AnalysisException(@ref, $"cannot resolve name '{@ref.Name}'");
         }
 
         private void VerifyNameExistsInContext(NamedReference name, bool allowKeywords)
@@ -591,7 +788,7 @@ namespace octo
                 {
                     return true;
                 }
-                s = reg.Name;
+                s = reg.Name.Name;
             }
             else if (value is NamedReference @ref)
             {
@@ -610,7 +807,7 @@ namespace octo
 
         private static bool IsReserved(string name)
         {
-            return Lexer.Constants.Contains(name) || Lexer.CalcKeywords.Contains(name);
+            return Lexer.Constants.ContainsKey(name) || Lexer.CalcKeywords.Contains(name);
         }
 
         private bool IsConstantAllowed(string name)

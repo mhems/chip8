@@ -1,4 +1,6 @@
-﻿using static octo.Lexer;
+﻿using System.Security.Cryptography;
+using System.Text;
+using static octo.Lexer;
 
 namespace octo
 {
@@ -31,7 +33,12 @@ namespace octo
 
     public class BcdStatement(Token token, GenericRegisterReference reg) : Statement(token)
     {
-        public GenericRegisterReference Register { get; } = reg;
+        public GenericRegisterReference Register { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            Register = reg;
+        }
 
         public override string ToString()
         {
@@ -41,7 +48,12 @@ namespace octo
 
     public class SaveStatement(Token token, GenericRegisterReference reg) : Statement(token)
     {
-        public GenericRegisterReference Register { get; } = reg;
+        public GenericRegisterReference Register { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            Register = reg;
+        }
 
         public override string ToString()
         {
@@ -51,7 +63,12 @@ namespace octo
 
     public class LoadStatement(Token token, GenericRegisterReference reg) : Statement(token)
     {
-        public GenericRegisterReference Register { get; } = reg;
+        public GenericRegisterReference Register { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            Register = reg;
+        }
 
         public override string ToString()
         {
@@ -66,9 +83,25 @@ namespace octo
         RValue height) :
         Statement(token)
     {
-        public GenericRegisterReference XRegister { get; } = x;
-        public GenericRegisterReference YRegister { get; } = y;
-        public RValue Height { get; } = height;
+        public GenericRegisterReference XRegister { get; private set; } = x;
+        public GenericRegisterReference YRegister { get; private set; } = y;
+        public RValue Height { get; private set; } = height;
+
+
+        public void ResolveX(GenericRegisterReference reg)
+        {
+            XRegister = reg;
+        }
+
+        public void ResolveY(GenericRegisterReference reg)
+        {
+            YRegister = reg;
+        }
+
+        public void ResolveHeight(RValue height)
+        {
+            Height = height;
+        }
 
         public override string ToString()
         {
@@ -143,7 +176,12 @@ namespace octo
 
     public class LoadDelayAssignment(Token token, GenericRegisterReference reg) : Assignment(token)
     {
-        public GenericRegisterReference SourceRegister { get; } = reg;
+        public GenericRegisterReference SourceRegister { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            SourceRegister = reg;
+        }
 
         public override string ToString()
         {
@@ -153,7 +191,12 @@ namespace octo
 
     public class SaveDelayAssignment(Token token, GenericRegisterReference reg) : Assignment(token)
     {
-        public GenericRegisterReference DestinationRegister { get; } = reg;
+        public GenericRegisterReference DestinationRegister { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            DestinationRegister = reg;
+        }
 
         public override string ToString()
         {
@@ -163,7 +206,12 @@ namespace octo
 
     public class LoadBuzzerAssignment(Token token, GenericRegisterReference reg) : Assignment(token)
     {
-        public GenericRegisterReference SourceRegister { get; } = reg;
+        public GenericRegisterReference SourceRegister { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            SourceRegister = reg;
+        }
 
         public override string ToString()
         {
@@ -175,9 +223,15 @@ namespace octo
     {
         public NumericLiteral? Address { get; }
         public NamedReference? Name { get; }
+        public RValue ResolvedValue { get; private set; }
 
         public MemoryAssignment(Token token, NumericLiteral address) : base(token) { Address = address; }
         public MemoryAssignment(Token token, NamedReference name) : base(token) { Name = name; }
+
+        public void Resolve(RValue value)
+        {
+            ResolvedValue = value;
+        }
 
         public override string ToString()
         {
@@ -187,7 +241,12 @@ namespace octo
 
     public class MemoryIncrementAssignment(Token token, GenericRegisterReference reg) : Assignment(token)
     {
-        public GenericRegisterReference Register { get; } = reg;
+        public GenericRegisterReference Register { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            Register = reg;
+        }
 
         public override string ToString()
         {
@@ -197,7 +256,12 @@ namespace octo
 
     public class LoadCharacterAssignment(Token token, GenericRegisterReference reg) : Assignment(token)
     {
-        public GenericRegisterReference Register { get; } = reg;
+        public GenericRegisterReference Register { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            Register = reg;
+        }
 
         public override string ToString()
         {
@@ -207,7 +271,12 @@ namespace octo
 
     public class KeyInputAssignment(Token token, GenericRegisterReference reg) : Assignment(token)
     {
-        public GenericRegisterReference DestinationRegister { get; } = reg;
+        public GenericRegisterReference DestinationRegister { get; private set; } = reg;
+
+        public void Resolve(GenericRegisterReference reg)
+        {
+            DestinationRegister = reg;
+        }
 
         public override string ToString()
         {
@@ -222,9 +291,19 @@ namespace octo
         GenericRegisterReference src,
         RegisterAssignment.AssignmentOperator op) : Assignment(token)
     {
-        public GenericRegisterReference SourceRegister { get; } = dest;
-        public GenericRegisterReference DestinationRegister { get; } = src;
+        public GenericRegisterReference SourceRegister { get; private set; } = dest;
+        public GenericRegisterReference DestinationRegister { get; private set; } = src;
         public AssignmentOperator Operator { get; } = op;
+
+        public void ResolveDestination(GenericRegisterReference reg)
+        {
+            DestinationRegister = reg;
+        }
+
+        public void ResolveSource(GenericRegisterReference reg)
+        {
+            SourceRegister = reg;
+        }
 
         public override string ToString()
         {
@@ -345,9 +424,19 @@ namespace octo
         RValue value,
         ImmediateAssignment.Operator op = ImmediateAssignment.Operator.Assignment) : Assignment(token)
     {
-        public GenericRegisterReference DestinationRegister { get; } = reg;
-        public RValue Value { get; } = value;
+        public GenericRegisterReference DestinationRegister { get; private set; } = reg;
+        public RValue Value { get; private set; } = value;
         public Operator Op { get; protected set; } = op;
+
+        public void ResolveDestination(GenericRegisterReference reg)
+        {
+            DestinationRegister = reg;
+        }
+
+        public void ResolveArgument(RValue value)
+        {
+            Value = value;
+        }
 
         public override string ToString()
         {
@@ -422,8 +511,18 @@ namespace octo
         GenericRegisterReference reg,
         RValue mask) : Assignment(token)
     {
-        public GenericRegisterReference DestinationRegister { get; } = reg;
-        public RValue Mask { get; } = mask;
+        public GenericRegisterReference DestinationRegister { get; private set; } = reg;
+        public RValue Mask { get; private set; } = mask;
+
+        public void ResolveRegister(GenericRegisterReference reg)
+        {
+            DestinationRegister = reg;
+        }
+
+        public void ResolveMask(RValue value)
+        {
+            Mask = value;
+        }
 
         public override string ToString()
         {
@@ -532,11 +631,22 @@ namespace octo
     public abstract class UnpackDirective(Token token, NamedReference name) : Directive(token)
     {
         public NamedReference Name { get; } = name;
+        public RValue ResolvedName { get; private set; }
+
+        public void ResolveName(RValue value)
+        {
+            ResolvedName = value;
+        }
     }
 
     public class UnpackNumberDirective(Token token, NamedReference name, RValue value) : UnpackDirective(token, name)
     {
-        public RValue Value { get; } = value;
+        public RValue Value { get; private set; } = value;
+
+        public void Resolve(RValue value)
+        {
+            Value = value;
+        }
 
         public override string ToString()
         {
@@ -603,7 +713,12 @@ namespace octo
 
     public class ValueByteDirective(Token token, RValue value) : ByteDirective(token)
     {
-        public RValue Value { get; } = value;
+        public RValue Value { get; private set; } = value;
+
+        public void Resolve(RValue value)
+        {
+            Value = value;
+        }
 
         public override string ToString()
         {
@@ -628,6 +743,12 @@ namespace octo
     public class NamedPointerDirective(Token token, NamedReference name) : PointerDirective(token)
     {
         public NamedReference Name { get; } = name;
+        public RValue ResolvedValue { get; private set; }
+
+        public void Resolve(RValue value)
+        {
+            ResolvedValue = value;
+        }
 
         public override string ToString()
         {
@@ -672,7 +793,12 @@ namespace octo
     #region conditional expression
     public abstract class ConditionalExpression(Token token, RValue reg) : AstNode(token)
     {
-        public RValue LeftRegister { get; } = reg;
+        public RValue LeftRegister { get; private set; } = reg;
+
+        public void ResolveLeft(RValue value)
+        {
+            LeftRegister = value;
+        }
     }
 
     public class BinaryConditionalExpression(
@@ -683,7 +809,12 @@ namespace octo
         : ConditionalExpression(token, left)
     {
         public ConditionalOperator Operator { get; protected set; } = op;
-        public RValue RightHandOperand { get; } = right;
+        public RValue RightHandOperand { get; private set; } = right;
+
+        public void ResolveRight(RValue value)
+        {
+            RightHandOperand = value;
+        }
 
         public override string ToString()
         {
@@ -1037,17 +1168,36 @@ namespace octo
 
     public class GenericRegisterReference : RValue
     {
-        public string? Name { get; }
-        public byte? Index { get; }
+        private bool resolved = false;
+        public CalculationExpression? Expression { get; private set; }
+        public NamedReference? Name { get; private set; }
+        public byte? Index { get; private set; }
 
-        public GenericRegisterReference(Token token, byte index) : base(token) { Index = index; }
-        public GenericRegisterReference(Token token, string name) : base(token) { Name = name; }
+        public GenericRegisterReference(Token token, byte index) : base(token) { Index = index; resolved = true; }
+        public GenericRegisterReference(Token token, NamedReference name) : base(token) { Name = name; }
+
+        public void Resolve(byte index)
+        {
+            Index = index;
+            Name = null;
+            resolved = true;
+        }
+
+        public void Resolve(CalculationExpression expression)
+        {
+            Expression = expression;
+            resolved = true;
+        }
 
         public override string ToString()
         {
             if (Index.HasValue)
             {
                 return $"v{Index.Value:X}";
+            }
+            else if (Expression != null)
+            {
+                return $"v[{Expression}]";
             }
             return Name.ToString();
         }
@@ -1057,8 +1207,30 @@ namespace octo
     {
         public string Name { get; } = name;
 
+        public NumericLiteral? Value { get; private set; }
+        public CalculationExpression? Expression { get; private set; }
+        public bool Constant { get; private set; } = false;
+        public bool Label { get; private set; } = false;
+        public CalculationExpression? RegisterIndexExpression { get; private set; }
+        public byte? RegisterIndex { get; private set; }
+
+        public void ResolveToNumber(NumericLiteral value) { Value = value; }
+        public void ResolveToLabel() { Label = true; }
+        public void ResolveToExpression(CalculationExpression expression) { Expression = expression; }
+        public void ResolveToKeyword() { Constant = true; }
+        public void ResolveToRegister(CalculationExpression expression) { RegisterIndexExpression = expression; }
+        public void ResolveToRegister(byte index) { RegisterIndex = index; }
+
         public override string ToString()
         {
+            if (Constant) return Name;
+            if (Label) return $"@{Name}";
+
+            if (Value != null) return Value.ToString();
+            if (Expression != null) return $"[{Expression}]";
+            if (RegisterIndex != null) return $"v{RegisterIndex:X}";
+            if (RegisterIndexExpression != null) return $"v[{RegisterIndexExpression}]";
+
             return Name;
         }
     }

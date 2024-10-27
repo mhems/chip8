@@ -798,8 +798,7 @@ namespace octo
             }
             else if (tokens[pos].Kind == TokenKind.NAME)
             {
-                pos++;
-                return new GenericRegisterReference(first, text);
+                return new GenericRegisterReference(first, ParseName());
             }
             throw new ParseException(tokens[pos], "expected register reference");
         }
