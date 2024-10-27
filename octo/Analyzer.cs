@@ -15,9 +15,9 @@ namespace octo
         private readonly HashSet<string> labels = [];
         private readonly Dictionary<string, CalculationExpression> calcs = [];
         private readonly Dictionary<string, MacroDefinition> macroNames = [];
-        private readonly Dictionary<string, uint> macroCalls = [];
+        private readonly Dictionary<Directive, uint> macroCalls = [];
         private readonly LinkedList<Dictionary<string, string>> macroSubstitutions = [];
-        private readonly Dictionary<string, StringDirective> stringDirectives = [];
+        private readonly Dictionary<string, Dictionary<string, StringDirective>> stringDirectives = [];
         private readonly HashSet<string> breakpoints = [];
         private string? currentMacro = null;
         private string? currentStringMode = null;
@@ -120,7 +120,7 @@ namespace octo
             }
             else if (directive is LabelDeclaration ld)
             {
-                VerifyNameUnique(ld, ld.Name, true);
+                VerifyNameUnique(ld, ld.Name, allowLabelDuplicates:true);
             }
             else if (directive is FunctionCallByName fc)
             {
@@ -150,7 +150,7 @@ namespace octo
             }
             else if (directive is NextDirective nd)
             {
-                VerifyNameUnique(nd, nd.Label, true);
+                VerifyNameUnique(nd, nd.Label, allowLabelDuplicates:true);
                 AnalyzeUnknownStatement(nd.Statement);
             }
             else if (directive is OrgDirective od)
@@ -161,7 +161,7 @@ namespace octo
             {
                 VerifyNameUnique(md, md.Name);
                 macroNames[md.Name] = md;
-                macroCalls[md.Name] = 0;
+                macroCalls[md] = 0;
                 reuse = false;
             }
             else if (directive is Calculation calc)
@@ -193,10 +193,21 @@ namespace octo
             }
             else if (directive is StringDirective sd)
             {
-                // TODO allow overlap as long as alphabets do not
-                VerifyNameUnique(sd, sd.Name);
-                stringDirectives[sd.Name] = sd;
-                macroCalls[sd.Name] = 0;
+                VerifyNameUnique(sd, sd.Name, allowStringModeDuplicates:true);
+                if (stringDirectives.TryGetValue(sd.Name, out Dictionary<string, StringDirective> byAlphabet))
+                {
+                    if (byAlphabet.Keys.Any(a => a.Any(c => sd.Alphabet.Contains(c))))
+                    {
+                        throw new AnalysisException(sd, $"string-mode directive '{sd.Name},' with alphabet '{sd.Alphabet}', " +
+                            $"overlaps alphabet of existing string-mode directive with same name");
+                    }
+                    byAlphabet[sd.Alphabet] = sd;
+                }
+                else
+                {
+                    stringDirectives[sd.Name] = new Dictionary<string, StringDirective>() { { sd.Alphabet, sd } };
+                }
+                macroCalls[sd] = 0;
                 reuse = false;
             }
             else if (directive is AssertDirective ad)
@@ -568,7 +579,7 @@ namespace octo
             }
         }
 
-        private void VerifyNameUnique(AstNode node, string name, bool allowLabelDuplicates = false)
+        private void VerifyNameUnique(AstNode node, string name, bool allowLabelDuplicates = false, bool allowStringModeDuplicates = false)
         {
             if (registerAliases.ContainsKey(name) || registerConstants.ContainsKey(name))
             {
@@ -590,7 +601,7 @@ namespace octo
             {
                 throw new AnalysisException(node, $"calc with name '{name}' already declared");
             }
-            if (stringDirectives.ContainsKey(name))
+            if (!allowStringModeDuplicates && stringDirectives.ContainsKey(name))
             {
                 throw new AnalysisException(node, $"stringmode with name '{name}' already declared");
             }
@@ -874,8 +885,8 @@ namespace octo
                     throw new AnalysisException(node, $"macro {macroName} expected {def.Arguments.Length} arguments, {suppliedArgs} supplied");
                 }
                 Dictionary<string, string> currentScope = [];
-                macroCalls[macroName] += 1;
-                currentScope["CALLS"] = macroCalls[macroName].ToString();
+                macroCalls[def] += 1;
+                currentScope["CALLS"] = macroCalls[def].ToString();
                 for (int i = 0; i < def.Arguments.Length; i++)
                 {
                     currentScope[def.Arguments[i]] = suppliedArgs[i];
@@ -891,13 +902,19 @@ namespace octo
                 currentMacro = null;
                 macroSubstitutions.RemoveFirst();
             }
-            else if (stringDirectives.TryGetValue(macroName, out StringDirective sd))
+            else if (stringDirectives.TryGetValue(macroName, out Dictionary<string, StringDirective> byAlphabet))
             {
                 if (suppliedArgs.Length != 1)
                 {
                     throw new AnalysisException(node, $"string-mode macros must be called with one string argument");
                 }
                 string text = suppliedArgs[0];
+                string? alphabet = byAlphabet.Keys.SingleOrDefault(k => text.All(c => k.Contains(c)));
+                if (alphabet == null)
+                {
+                    throw new AnalysisException(node, $"no string-mode declared whose alphabet covers \"{text}\"");
+                }
+                StringDirective sd = byAlphabet[alphabet];
 
                 for (int i = 0; i < text.Length; i++)
                 {
@@ -912,8 +929,8 @@ namespace octo
                     currentScope["VALUE"] = value.ToString();
 
                     macroSubstitutions.AddFirst(currentScope);
-                    macroCalls[macroName] += 1;
-                    currentScope["CALLS"] = macroCalls[macroName].ToString();
+                    macroCalls[sd] += 1;
+                    currentScope["CALLS"] = macroCalls[sd].ToString();
                     currentMacro = macroName;
                     currentStringMode = macroName;
 
