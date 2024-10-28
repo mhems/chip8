@@ -109,31 +109,23 @@ namespace octo
         }
     }
 
-    public abstract class JumpStatement(Token token, bool immediate) : Statement(token)
+    public abstract class JumpStatement(Token token, RValue target, bool immediate) : Statement(token)
     {
         public bool Immediate { get; } = immediate;
-        public NamedReference? TargetName { get; }
-        public NumericLiteral? TargetBaseAddress { get; }
-
-        public JumpStatement(Token token, NamedReference target, bool immediate) : this(token, immediate) { TargetName = target; }
-        public JumpStatement(Token token, NumericLiteral address, bool immediate) : this(token, immediate) { TargetBaseAddress = address; }
+        public RValue Target { get; } = target;
 
         public override string ToString()
         {
-            return $"jump{(Immediate ? "" : "0")} {TargetName?.ToString() ?? TargetBaseAddress?.ToString() ?? "???"}";
+            return $"jump{(Immediate ? "" : "0")} {Target}";
         }
     }
 
-    public class JumpImmediateStatement : JumpStatement
+    public class JumpImmediateStatement(Token token, RValue target) : JumpStatement(token, target, true)
     {
-        public JumpImmediateStatement(Token token, NamedReference target) : base(token, target, true) { }
-        public JumpImmediateStatement(Token token, NumericLiteral address) : base(token, address, true) { }
     }
 
-    public class JumpAdditiveStatement : JumpStatement
+    public class JumpAdditiveStatement(Token token, RValue target) : JumpStatement(token, target, false)
     {
-        public JumpAdditiveStatement(Token token, NamedReference target) : base(token, target, false) { }
-        public JumpAdditiveStatement(Token token, NumericLiteral address) : base(token, address, false) { }
     }
 
     public class MacroInvocation(Token token, string name, string[] args) : Statement(token)
@@ -912,7 +904,6 @@ namespace octo
     #region calculations
     public abstract class CalculationExpression(Token token) : AstNode(token)
     {
-        public abstract double Interpret();
     }
 
     public class CalculationBinaryOperation(
@@ -925,38 +916,6 @@ namespace octo
         public CalculationExpression Left { get; } = lhs;
         public CalculationExpression Right { get; } = rhs;
         public BinaryOperator Operator { get; } = @operator;
-
-        public override double Interpret()
-        {
-            double l = Left.Interpret();
-            double r = Right.Interpret();
-            return Operator switch
-            {
-                BinaryOperator.Addition => l + r,
-                BinaryOperator.Subtraction => l - r,
-                BinaryOperator.Multiplication => l * r,
-                BinaryOperator.Division => l / r,
-                BinaryOperator.Modulus => l % r,
-                BinaryOperator.Minimum => Math.Min(l, r),
-                BinaryOperator.Maximum => Math.Max(l, r),
-                BinaryOperator.Exponentiation => Math.Pow(l, r),
-
-                BinaryOperator.And => UInt32Wrapper(l, r, (l, r) => l & r),
-                BinaryOperator.Or => UInt32Wrapper(l, r, (l, r) => l | r),
-                BinaryOperator.Xor => UInt32Wrapper(l, r, (l, r) => l ^ r),
-                BinaryOperator.LeftShift => UInt32Wrapper(l, r, (l, r) => l << (int)r),
-                BinaryOperator.RightShift => UInt32Wrapper(l, r, (l, r) => l >> (int)r),
-
-                BinaryOperator.LessThan => ToBinary(l < r),
-                BinaryOperator.LessThanOrEqual => ToBinary(l <= r),
-                BinaryOperator.GreaterThan => ToBinary(l > r),
-                BinaryOperator.GreaterThanOrEqual => ToBinary(l >= r),
-                BinaryOperator.EqualTo => ToBinary(l == r),
-                BinaryOperator.NotEqualTo => ToBinary(l != r),
-
-                _ => throw new Exception("unknown binary operator")
-            };
-        }
 
         public enum BinaryOperator
         {
@@ -993,16 +952,6 @@ namespace octo
             return $"({Left} {operatorText[Operator]} {Right})";
         }
 
-        private static UInt32 UInt32Wrapper(double l, double r, Func<UInt32, UInt32, UInt32> function)
-        {
-            return function.Invoke(Convert.ToUInt32(l), Convert.ToUInt32(r));
-        }
-
-        private static int ToBinary(bool b)
-        {
-            return b ? 1 : 0;
-        }
-
         private static readonly Dictionary<BinaryOperator, string> operatorText = new()
         {
             {BinaryOperator.Addition, "+" },
@@ -1033,30 +982,6 @@ namespace octo
     {
         public CalculationExpression Expression { get; } = expr;
         public UnaryOperator Operator { get; } = @operator;
-
-        public override double Interpret()
-        {
-            double e = Expression.Interpret();
-            return Operator switch
-            {
-                UnaryOperator.NumericalNegation => -e,
-                UnaryOperator.BitwiseNegation => ~Convert.ToUInt32(e),
-                UnaryOperator.LogicalNegation => Convert.ToDouble(!Convert.ToBoolean(e)),
-                UnaryOperator.AddressOf => throw new NotImplementedException("TODO"),
-                UnaryOperator.Sine => Math.Sin(e),
-                UnaryOperator.Cosine => Math.Cos(e),
-                UnaryOperator.Tangent => Math.Tan(e),
-                UnaryOperator.Logarithm => Math.Log(e),
-                UnaryOperator.Exponentiation => Math.Exp(e),
-                UnaryOperator.AbsoluteValue => Math.Abs(e),
-                UnaryOperator.SquareRoot => Math.Sqrt(e),
-                UnaryOperator.Sign => Math.Sign(e),
-                UnaryOperator.Ceiling => Math.Ceiling(e),
-                UnaryOperator.Floor => Math.Floor(e),
-
-                _ => throw new NotImplementedException("unknown binary operator")
-            };
-        }
 
         public override string ToString()
         {
@@ -1105,15 +1030,6 @@ namespace octo
         public string? Text { get; } = text ? s : null;
         public string? Name { get; } = text ? null : s;
 
-        public override double Interpret()
-        {
-            if (Text != null)
-            {
-                return Text.Length;
-            }
-            throw new NotImplementedException();
-        }
-
         public override string ToString()
         {
             if (Text != null)
@@ -1124,36 +1040,25 @@ namespace octo
         }
     }
 
-    public class CalculationName(Token token, string name) : CalculationExpression(token)
+    public class CalculationName(Token token, NamedReference name) : CalculationExpression(token)
     {
-        public string Name { get; } = name;
+        public NamedReference Name { get; } = name;
+        public RValue ResolvedValue { get; private set; }
 
-        public override double Interpret()
+        public void Resolve(RValue value)
         {
-            return Name switch
-            {
-                "E" => Math.E,
-                "PI" => Math.PI,
-                "CALLS" => throw new NotImplementedException(),
-                "HERE" => throw new NotImplementedException(),
-                _ => throw new NotImplementedException(),
-            };
+            ResolvedValue = value;
         }
 
         public override string ToString()
         {
-            return Name;
+            return Name.ToString();
         }
     }
 
     public class CalculationNumber(Token token, double num) : CalculationExpression(token)
     {
         public double Number { get; } = num;
-
-        public override double Interpret()
-        {
-            return Number;
-        }
 
         public override string ToString()
         {

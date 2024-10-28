@@ -647,8 +647,7 @@ namespace octo
             if (tokens[pos].Kind == TokenKind.NAME ||
                 tokens[pos].Kind == TokenKind.CONSTANT)
             {
-                pos++;
-                return new CalculationName(first, tokens[pos-1].Value.ToString());
+                return new CalculationName(first, ParseName());
             }
             throw new ParseException(tokens[pos], "unable to find terminal token");
         }

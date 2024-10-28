@@ -114,7 +114,6 @@ namespace octo
             else if (directive is ConstantAlias ca)
             {
                 VerifyNameUnique(ca, ca.Name);
-                // TODO assert 8 bits
                 registerConstants[ca.Name] = ca.Expression;
                 reuse = false;
             }
@@ -144,7 +143,6 @@ namespace octo
                 if (ud is UnpackNumberDirective und)
                 {
                     VerifyRValue(und.Value, false, true);
-                    // TODO value is 4 bits
                     und.Resolve(ResolveRValue(und.Value, true));
                 }
             }
@@ -298,7 +296,6 @@ namespace octo
             else if (assignment is ImmediateAssignment ia)
             {
                 VerifyVRegister(ia.DestinationRegister);
-                // TODO verify ia.Number is 8 bits
                 tmp = ia.DestinationRegister;
                 ResolveRegisterReference(ref tmp);
                 ia.ResolveDestination(tmp);
@@ -314,7 +311,6 @@ namespace octo
                 rna.ResolveRegister(tmp);
 
                 VerifyRValue(rna.Mask, false, true);
-                // TODO verify 8 bits
                 rna.ResolveMask(ResolveRValue(rna.Mask, true));
             }
             else if (assignment is AmbiguousAssignment aa)
@@ -394,7 +390,6 @@ namespace octo
                 VerifyVRegister(sps.XRegister);
                 VerifyVRegister(sps.YRegister);
                 VerifyRValue(sps.Height, false, true);
-                // TODO verify num is 4 bits
                 tmp = sps.XRegister;
                 ResolveRegisterReference(ref tmp);
                 sps.ResolveX(tmp);
@@ -407,13 +402,9 @@ namespace octo
             }
             else if (statement is JumpStatement js)
             {
-                if (js.TargetName != null)
+                if (js.Target != null)
                 {
-                    VerifyRValue(js.TargetName, false, false);
-                }
-                else
-                {
-                    // TODO verify num is 12 bits
+                    VerifyRValue(js.Target, false, false);
                 }
             }
             else if (statement is MacroInvocation mi)
@@ -443,7 +434,7 @@ namespace octo
             }
             else if (statement is DataDeclaration)
             {
-                // TODO verify num is 8 bits
+                
             }
 
             if (reuse)
@@ -542,9 +533,9 @@ namespace octo
                 {
                     if (cuo.Expression is CalculationName cn)
                     {
-                        if (!labels.Contains(cn.Name))
+                        if (!labels.Contains(cn.Name.Name))
                         {
-                            throw new AnalysisException(cn, "calculations cannot reference labels");
+                            throw new AnalysisException(cn, "label expected to follow address-of operator '@'");
                         }
                     }
                     else
@@ -563,11 +554,12 @@ namespace octo
             }
             else if (expression is CalculationName cn)
             {
-                if (registerAliases.ContainsKey(cn.Name) ||
-                    registerConstants.ContainsKey(cn.Name))
+                if (IsVRegister(cn.Name))
                 {
                     throw new AnalysisException(cn, "calculations cannot reference registers");
                 }
+
+                cn.Resolve(ResolveNamedReference(cn.Name, true));
             }
             else if (expression is CalculationNumber)
             {
