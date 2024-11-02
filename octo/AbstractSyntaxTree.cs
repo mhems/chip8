@@ -785,11 +785,11 @@ namespace octo
     #region conditional expression
     public abstract class ConditionalExpression(Token token, RValue reg) : AstNode(token)
     {
-        public RValue LeftRegister { get; private set; } = reg;
+        public RValue LeftHandOperand { get; private set; } = reg;
 
         public void ResolveLeft(RValue value)
         {
-            LeftRegister = value;
+            LeftHandOperand = value;
         }
     }
 
@@ -810,7 +810,7 @@ namespace octo
 
         public override string ToString()
         {
-            return $"{LeftRegister} {operatorText[Operator]} {RightHandOperand}";
+            return $"{LeftHandOperand} {operatorText[Operator]} {RightHandOperand}";
         }
 
         public enum ConditionalOperator
@@ -840,7 +840,7 @@ namespace octo
 
         public override string ToString()
         {
-            return $"{LeftRegister} {(KeyPressed ? "" : "-")}key";
+            return $"{LeftHandOperand} {(KeyPressed ? "" : "-")}key";
         }
     }
     #endregion
@@ -1119,12 +1119,8 @@ namespace octo
         public CalculationExpression? RegisterIndexExpression { get; private set; }
         public byte? RegisterIndex { get; private set; }
 
-        public void ResolveToNumber(NumericLiteral value) { Value = value; }
         public void ResolveToLabel() { Label = true; }
         public void ResolveToExpression(CalculationExpression expression) { Expression = expression; }
-        public void ResolveToKeyword() { Constant = true; }
-        public void ResolveToRegister(CalculationExpression expression) { RegisterIndexExpression = expression; }
-        public void ResolveToRegister(byte index) { RegisterIndex = index; }
 
         public override string ToString()
         {
