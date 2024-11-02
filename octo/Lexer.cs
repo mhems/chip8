@@ -36,8 +36,9 @@ namespace octo
      *             | controlStatement
      *             | NAME # function call
      *             | NAME NAME* # macro call
+     *             | NAME STRING # string mode call
      *             | directive
-     *             | NUMBER # data
+     *             | byte # data
      * assignment := 'delay' ':=' v_register
      *             | 'buzzer' ':=' v_register
      *             | 'i' ':=' (ADDRESS | NAME)
@@ -65,14 +66,13 @@ namespace octo
      * ifThen := 'if' conditional 'then' statement
      * ifBegin := 'if' conditional 'begin' statement+ 'end'
      * ifElse := 'if' conditional 'begin' statement+ 'else' statement+ 'end'
-     * infiniteLoop := 'loop' statement+ danglingIf? 'again'
+     * infiniteLoop := 'loop' (statement | whileLoop)+ danglingIf? 'again'
      * whileLoop := 'while' conditional statement
      * danglingIf := 'if' conditional 'then'
      * controlStatement := ifThen
      *                   | ifBegin
      *                   | ifElse
      *                   | infiniteLoop
-     *                   | whileLoop
      * constExpr := '-' constExpr
      *            | '~' constExpr
      *            | '!' constExpr
