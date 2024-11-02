@@ -1,4 +1,5 @@
 ﻿using emulator;
+using System.Diagnostics;
 using static octo.Analyzer;
 using static octo.CalculationBinaryOperation;
 using static octo.CalculationUnaryOperation;
@@ -8,22 +9,35 @@ namespace octo
 {
     public class Generator(Statement[] statements)
     {
+        private static readonly Dictionary<BinaryConditionalExpression.ConditionalOperator, BinaryConditionalExpression.ConditionalOperator> negations = new()
+        {
+            {BinaryConditionalExpression.ConditionalOperator.Equality, BinaryConditionalExpression.ConditionalOperator.Inequality },
+            {BinaryConditionalExpression.ConditionalOperator.Inequality, BinaryConditionalExpression.ConditionalOperator.Equality },
+            {BinaryConditionalExpression.ConditionalOperator.LessThan, BinaryConditionalExpression.ConditionalOperator.GreaterThanOrEqualTo },
+            {BinaryConditionalExpression.ConditionalOperator.LessThanOrEqualTo, BinaryConditionalExpression.ConditionalOperator.GreaterThan },
+            {BinaryConditionalExpression.ConditionalOperator.GreaterThan, BinaryConditionalExpression.ConditionalOperator.LessThanOrEqualTo },
+            {BinaryConditionalExpression.ConditionalOperator.GreaterThanOrEqualTo, BinaryConditionalExpression.ConditionalOperator.LessThan },
+        };
         private readonly Statement[] statements = statements;
         private readonly Dictionary <string, ushort> addresses = [];
         private ushort pos = 0;
         private ushort address = Chip8.PROGRAM_START_ADDRESS;
-        private ushort unpack_hi = 0;
-        private ushort unpack_lo = 1;
-        private readonly ushort[] program = [];
+        private byte unpack_hi = 0;
+        private byte unpack_lo = 1;
+        private readonly List<byte> program = [];
+        private readonly Dictionary<string, HashSet<int>> backpatches = [];
+        private readonly Stack<HashSet<int>> whileStack = [];
 
-        public ushort[] Generate()
+        public byte[] Generate()
         {
+            GenerateInstruction("JMPI", [0x0]);
+            CreateBackpatch("main", 0);
             foreach (Statement statement in statements)
             {
                 GenerateUnknownStatement(statement);
             }
 
-            return program;
+            return program.ToArray();
         }
 
         private void GenerateUnknownStatement(Statement statement)
@@ -63,31 +77,39 @@ namespace octo
             {
                 if (ca.Name == "unpack-hi")
                 {
-                    unpack_hi = GetNumber(ca.Expression, 4);
+                    unpack_hi = GetByte(ca.Expression, 4);
                 }
                 else if (ca.Name == "unpack-lo")
                 {
-                    unpack_lo = GetNumber(ca.Expression, 4);
+                    unpack_lo = GetByte(ca.Expression, 4);
                 }
             }
             else if (directive is LabelDeclaration ld)
             {
+                Trace.WriteLine($"label declaration: {ld.Name}");
                 addresses[ld.Name] = address;
+                if (backpatches.TryGetValue(ld.Name, out HashSet<int> set))
+                {
+                    foreach (int i in set)
+                    {
+                        Backpatch(address, i);
+                    }
+                }
             }
             else if (directive is FunctionCallByName fcn)
             {
-                GenerateInstruction("CALL", [GetNumber(fcn.Name, 12)]);
+                GenerateInstruction("CALL", [GetShort(fcn.Name, 12)]);
             }
             else if (directive is FunctionCallByNumber fcnum)
             {
-                GenerateInstruction("CALL", [GetNumber(fcnum.Expression, 12)]);
+                GenerateInstruction("CALL", [GetShort(fcnum.Expression, 12)]);
             }
             else if (directive is UnpackDirective ud)
             {
-                ushort value = GetNumber(ud.ResolvedName, 16);
+                ushort value = GetShort(ud.ResolvedName, 16);
                 if (ud is UnpackNumberDirective und)
                 {
-                    value = (ushort)((GetNumber(und.Value, 4) << 12) | (value & 0xFFF));
+                    value = (ushort)((GetByte(und.Value, 4) << 12) | (value & 0xFFF));
                 }
                 byte hi = (byte)(value >> 8);
                 byte lo = (byte)(value & 0xFF);
@@ -101,7 +123,7 @@ namespace octo
             }
             else if (directive is OrgDirective od)
             {
-                ushort target = GetNumber(od.Expression, 12);
+                ushort target = GetShort(od.Expression, 12);
                 ushort roundedTarget = (ushort)(target & ~1);
                 while (address < roundedTarget)
                 {
@@ -118,25 +140,25 @@ namespace octo
             }
             else if (directive is ValueByteDirective vbd)
             {
-                byte value = (byte)GetNumber(vbd.Value, 8);
+                byte value = GetByte(vbd.Value, 8);
                 GenerateByte(value);
             }
             else if (directive is ExpressionByteDirective ebd)
             {
-                byte value = (byte)GetNumber(ebd.Expression, 8);
+                byte value = GetByte(ebd.Expression, 8);
                 GenerateByte(value);
             }
             else if (directive is NamedPointerDirective npd)
             {
-                GenerateData(GetNumber(npd.ResolvedValue, 16));
+                GenerateData(GetShort(npd.ResolvedValue, 16));
             }
             else if (directive is PointerExpressionDirective ped)
             {
-                GenerateData(GetNumber(ped.Expression, 16));
+                GenerateData(GetShort(ped.Expression, 16));
             }
             else if (directive is AssertDirective ad)
             {
-                ushort result = GetNumber(ad.Expression, 16);
+                ushort result = GetShort(ad.Expression, 16);
                 if (result == 0)
                 {
                     throw new AnalysisException(ad, $"\"{ad.Message}\": expression '{ad.Expression}' evaluated to '{result}'");
@@ -164,7 +186,7 @@ namespace octo
             }
             else if (assignment is MemoryAssignment ma)
             {
-                GenerateInstruction("STO", [GetNumber(ma.ResolvedValue, 12)]);
+                GenerateInstruction("STO", [GetShort(ma.ResolvedValue, 12)]);
             }
             else if (assignment is MemoryIncrementAssignment mia)
             {
@@ -198,10 +220,10 @@ namespace octo
             else if (assignment is ImmediateAssignment ia)
             {
                 ushort[] args = [GetRegisterIndex(ia.DestinationRegister),
-                                 GetNumber(ia.Value, 8)];
+                                 GetByte(ia.Value, 8)];
                 if (ia.Op == Operator.Subtraction)
                 {
-                    args[1] = (ushort)((~args[1] + 1) & 0xFF);
+                    args[1] = Negate(args[1]);
                 }
                 string mnemonic = ia.Op == Operator.Assignment ? "SETI" : "ADDI";
                 GenerateInstruction(mnemonic, args);
@@ -209,7 +231,7 @@ namespace octo
             else if (assignment is RandomAssignment rna)
             {
                 GenerateInstruction("RAND", [GetRegisterIndex(rna.DestinationRegister),
-                                             GetNumber(rna.Mask, 8)]);
+                                             GetByte(rna.Mask, 8)]);
             }
             else
             {
@@ -221,24 +243,49 @@ namespace octo
         {
             if (statement is IfStatement ifStatement)
             {
-                bool dangling = ifStatement.Body == null;
+                GenerateCondition(ifStatement.Condition, false);
+                if (ifStatement.Body != null)
+                {
+                    GenerateUnknownStatement(ifStatement.Body);
+                }
             }
             else if (statement is IfElseBlock ifElseBlock)
             {
-
+                GenerateCondition(ifElseBlock.Condition, true);
+                int start_pos = pos;
+                GenerateInstruction("JMPI", [0x0]);
+                foreach (Statement inner in ifElseBlock.ThenBody)
+                {
+                    GenerateUnknownStatement(inner);
+                }
+                int end_of_if_pos = pos;
+                GenerateInstruction("JMPI", [0x0]);
+                Backpatch(address, start_pos);
+                foreach (Statement inner in ifElseBlock.ElseBody)
+                {
+                    GenerateUnknownStatement(inner);
+                }
+                Backpatch(address, end_of_if_pos);
             }
             else if (statement is LoopStatement loopStatement)
             {
                 ushort startOfLoop = address;
+                whileStack.Push([]);
                 foreach (Statement s in loopStatement.Body)
                 {
                     GenerateUnknownStatement(s);
                 }
                 GenerateInstruction("JMPI", [startOfLoop]);
+                foreach (int p in whileStack.Pop())
+                {
+                    Backpatch(address, p);
+                }
             }
             else if (statement is WhileStatement whileStatement)
             {
-
+                GenerateCondition(whileStatement.Condition, true);
+                whileStack.Peek().Add(pos);
+                GenerateInstruction("JMPI", [0x0]);
             }
             else
             {
@@ -246,19 +293,90 @@ namespace octo
             }
         }
 
-        private void GenerateCondition(ConditionalExpression expression)
+        private void GenerateCondition(ConditionalExpression expression, bool negate)
         {
             if (expression is KeystrokeCondition kc)
             {
                 GenerateInstruction(kc.KeyPressed ? "SKEQ" : "SKNE",
-                                    [GetRegisterIndex(kc.LeftRegister)]);
+                                    [GetRegisterIndex(kc.LeftHandOperand)]);
             }
             else if (expression is BinaryConditionalExpression bce)
             {
                 BinaryConditionalExpression.ConditionalOperator op = bce.Operator;
-                // TODO
-                // <, <=, >, >= can use "SUB", "RSUB", or "ADDI" (w/ negation)
-                // if left is number, have to negate op and swap left and right operands
+                if (negate)
+                {
+                    op = negations[op];
+                }
+                bool leftIsReg = bce.LeftHandOperand is GenericRegisterReference;
+                bool rightIsReg = bce.RightHandOperand is GenericRegisterReference;
+
+                ushort[] args;
+                if (!leftIsReg && rightIsReg)
+                {
+                    args = [GetRegisterIndex(bce.RightHandOperand),
+                            GetByte(bce.LeftHandOperand, 8)];
+                }
+                else
+                {
+                    args = [GetRegisterIndex(bce.LeftHandOperand),
+                            (rightIsReg ? GetRegisterIndex(bce.RightHandOperand) :
+                                          GetByte(bce.RightHandOperand, 8))];
+                }
+
+                if (leftIsReg ^ rightIsReg)
+                {
+                    if (op == BinaryConditionalExpression.ConditionalOperator.Equality)
+                    {
+                        GenerateInstruction("SNEI", args);
+                    }
+                    else if (op == BinaryConditionalExpression.ConditionalOperator.Inequality)
+                    {
+                        GenerateInstruction("SEQI", args);
+                    }
+                    else
+                    {
+                        GenerateInstruction("SETI", [0xF, args[1]]);
+                    }
+                }
+                else
+                {
+                    if (op == BinaryConditionalExpression.ConditionalOperator.Equality)
+                    {
+                        GenerateInstruction("SNE", args);
+                    }
+                    else if (op == BinaryConditionalExpression.ConditionalOperator.Inequality)
+                    {
+                        GenerateInstruction("SEQ", args);
+                    }
+                    else
+                    {
+                        GenerateInstruction("SET", [0xF, args[1]]);
+                    }
+                }
+
+                if (op != BinaryConditionalExpression.ConditionalOperator.Equality &&
+                    op != BinaryConditionalExpression.ConditionalOperator.Inequality)
+                {
+                    if (op == BinaryConditionalExpression.ConditionalOperator.GreaterThan ||
+                        op == BinaryConditionalExpression.ConditionalOperator.LessThanOrEqualTo)
+                    {
+                        GenerateInstruction("SUB", [0xF, args[0]]);
+                    }
+                    else
+                    {
+                        GenerateInstruction("RSUB", [0xF, args[0]]);
+                    }
+
+                    if (op == BinaryConditionalExpression.ConditionalOperator.LessThan ||
+                        op == BinaryConditionalExpression.ConditionalOperator.GreaterThan)
+                    {
+                        GenerateInstruction("SNEI", [0xF, 0]);
+                    }
+                    else
+                    {
+                        GenerateInstruction("SEQI", [0xF, 0]);
+                    }
+                }
             }
             else
             {
@@ -292,17 +410,17 @@ namespace octo
             {
                 ushort[] args = [GetRegisterIndex(sps.XRegister),
                                  GetRegisterIndex(sps.YRegister),
-                                 GetNumber(sps.Height, 4)];
+                                 GetByte(sps.Height, 4)];
                 GenerateInstruction("DRAW", args);
             }
             else if (statement is JumpStatement js)
             {
                 GenerateInstruction(js.Immediate ? "JMPI" : "JMPA",
-                                    [GetNumber(js.Target, 12)]);
+                                    [GetShort(js.Target, 12)]);
             }
             else if (statement is DataDeclaration dd)
             {
-                GenerateData(dd.Value);
+                GenerateByte(dd.Value);
             }
             else
             {
@@ -318,14 +436,45 @@ namespace octo
 
         private void GenerateData(ushort value)
         {
-            program[pos] = value;
-            pos++;
-            address += 2;
+            GenerateByte((byte)(value >> 8));
+            GenerateByte((byte)(value & 0xFF));
         }
 
         private void GenerateByte(byte value)
         {
-            // TODO must only emit in pairs
+            program.Add(value);
+            pos++;
+            address++;
+        }
+
+        private void Backpatch(ushort address, int pos)
+        {
+            ushort value = (ushort)((program[pos] << 8) | program[pos + 1]);
+            if (address > 0x0fff)
+            {
+                throw new AnalysisException("target resolved to greater than 12 bits");
+            }
+            if (value != 0x1000 &&
+                value != 0x2000 &&
+                value != 0xA000 &&
+                value != 0xB000)
+            {
+                throw new AnalysisException($"cannot backpatch instruction 0x{value:x}");
+            }
+            program[pos] |= (byte)((address & 0x0F00) >> 8);
+            program[pos + 1] = (byte)(address & 0x00FF);
+        }
+
+        private void CreateBackpatch(string name, int pos)
+        {
+            if (backpatches.TryGetValue(name, out HashSet<int> set))
+            {
+                set.Add(pos);
+            }
+            else
+            {
+                backpatches.Add(name, [pos]);
+            }
         }
 
         private byte GetRegisterIndex(RValue value)
@@ -348,17 +497,34 @@ namespace octo
             throw new AnalysisException(value, $"value is not resolved");
         }
 
-        private ushort GetNumber(RValue value, int numBits)
+        private ushort GetShort(RValue value, int numBits)
         {
+            if (numBits > 16)
+            {
+                throw new ArgumentException("must be at most 16", nameof(numBits));
+            }
             ushort number;
             if (value is NumericLiteral n)
             {
-                number = Convert.ToUInt16(n.Value);
+                try
+                {
+                    if (n.Value < 0)
+                    {
+                        number = Negate(Convert.ToUInt16(-n.Value));
+                    }
+                    else
+                    {
+                        number = Convert.ToUInt16(n.Value);
+                    }
+                }
+                catch
+                {
+                    throw new AnalysisException(value, $"cannot convert {n.Value} to integer");
+                }
                 if (number != n.Value)
                 {
-                    throw new AnalysisException(n, $"converting {n.Value} to {numBits} bits would result in truncation");
+                   // throw new AnalysisException(value, $"expected {numBits}-bit unsigned integer");
                 }
-                // TODO verify num bits
             }
             else if (value is GenericRegisterReference reg)
             {
@@ -366,15 +532,66 @@ namespace octo
             }
             else if (value is NamedReference name)
             {
-                // TODO
+                if (name.Label)
+                {
+                    if (!addresses.TryGetValue(name.Name, out number))
+                    {
+                        number = 0;
+                        CreateBackpatch(name.Name, pos);
+                    }
+                }
+                else if (name.Expression != null)
+                {
+                    return GetShort(name.Expression, numBits);
+                }
+                else throw new AnalysisException(value, "was never resolved");
             }
-            throw new AnalysisException(value, "unknown RValue sub-type");
+            else throw new AnalysisException(value, "unknown RValue sub-type");
+
+            ushort masked = (ushort)(number & ((1 << numBits) - 1));
+            if (number != masked)
+            {
+                //throw new AnalysisException(value, $"expected at most {numBits}-bit value");
+            }
+            return masked;
         }
 
-        private ushort GetNumber(CalculationExpression expression, int numBits)
+        private byte GetByte(RValue value, int numBits)
         {
-            // TODO
-            throw new NotImplementedException();
+            if (numBits > 8)
+            {
+                throw new ArgumentException("must be at most 8", nameof(numBits));
+            }
+            ushort number = GetShort(value, numBits);
+            byte masked = (byte)(number & ((1 << numBits) - 1));
+            if (number != masked)
+            {
+                throw new AnalysisException(value, $"expected at most {numBits}-bit value");
+            }
+            return masked;
+        }
+
+        private ushort GetShort(CalculationExpression expression, int numBits)
+        {
+            if (numBits > 16)
+            {
+                throw new ArgumentException("must be at most 16", nameof(numBits));
+            }
+            double number = Interpret(expression);
+            ushort converted = Convert.ToUInt16(number);
+            ushort masked = (ushort)(converted & ((1 << numBits) - 1));
+            return masked;
+        }
+
+        private byte GetByte(CalculationExpression expression, int numBits)
+        {
+            if (numBits > 8)
+            {
+                throw new ArgumentException("must be at most 8", nameof(numBits));
+            }
+            ushort number = GetShort(expression, numBits);
+            byte masked = (byte)(number & ((1 << numBits) - 1));
+            return masked;
         }
 
         private double Interpret(CalculationExpression expression)
@@ -487,6 +704,11 @@ namespace octo
             {
                 throw new AnalysisException(expression, $"unknown calculation sub-type");
             }
+        }
+
+        private static ushort Negate(ushort n)
+        {
+            return (ushort)((~n + 1) & 0xFFFF);
         }
 
         private static UInt32 UInt32Wrapper(double l, double r, Func<UInt32, UInt32, UInt32> function)
