@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.Tracing;
+﻿using System.Diagnostics;
+using System.Diagnostics.Tracing;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
@@ -253,6 +254,7 @@ namespace octo
                 if (ma.Address != null)
                 {
                     VerifyNumber(ma.Address, 12);
+                    ma.Resolve(ma.Address);
                 }
                 else
                 {
@@ -318,6 +320,8 @@ namespace octo
                 reuse = false;
                 Assignment disambiguatedAssignment;
                 VerifyVRegister(aa.DestinationRegister);
+                tmp = aa.DestinationRegister;
+                ResolveRegisterReference(ref tmp);
                 if (IsVRegister(aa.Name))
                 {
                     GenericRegisterReference reg = new(aa.Name.FirstToken, aa.Name);
@@ -328,6 +332,8 @@ namespace octo
                         ImmediateAssignment.Operator.Addition => new RegisterAddAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, reg),
                         ImmediateAssignment.Operator.Subtraction => new RegisterSubtractionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, reg),
                     };
+                    ((RegisterAssignment)disambiguatedAssignment).ResolveSource(reg);
+                    ((RegisterAssignment)disambiguatedAssignment).ResolveDestination(tmp);
                 }
                 else
                 {
@@ -338,6 +344,8 @@ namespace octo
                         ImmediateAssignment.Operator.Addition => new ImmediateAdditionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, value),
                         ImmediateAssignment.Operator.Subtraction => new ImmediateSubtractionAssignment(aa.DestinationRegister.FirstToken, aa.DestinationRegister, value),
                     };
+                    ((ImmediateAssignment)disambiguatedAssignment).ResolveDestination(tmp);
+                    ((ImmediateAssignment)disambiguatedAssignment).ResolveArgument(value);
                 }
                 analyzedStatements.Add(disambiguatedAssignment);
             }
@@ -405,6 +413,7 @@ namespace octo
                 if (js.Target != null)
                 {
                     VerifyRValue(js.Target, false, false);
+                    ResolveRValue(js.Target, false);
                 }
             }
             else if (statement is MacroInvocation mi)
@@ -417,7 +426,9 @@ namespace octo
                 reuse = false;
                 if (labels.Contains(ac.TargetName))
                 {
-                    analyzedStatements.Add(new FunctionCallByName(ac.FirstToken, new NamedReference(ac.FirstToken, ac.TargetName)));
+                    NamedReference @ref = new(ac.FirstToken, ac.TargetName);
+                    @ref.ResolveToLabel();
+                    analyzedStatements.Add(new FunctionCallByName(ac.FirstToken, @ref));
                 }
                 else if (stringDirectives.ContainsKey(ac.TargetName))
                 {
@@ -485,17 +496,17 @@ namespace octo
 
         private void AnalyzeCondition(ConditionalExpression expression)
         {
-            VerifyVRegister(expression.LeftRegister);
+            VerifyVRegister(expression.LeftHandOperand);
 
-            expression.ResolveLeft(ResolveRValue(expression.LeftRegister, true));
+            expression.ResolveLeft(ResolveRValue(expression.LeftHandOperand, true));
 
             if (expression is KeystrokeCondition kc)
             {
-                VerifyVRegister(kc.LeftRegister);
+                VerifyVRegister(kc.LeftHandOperand);
             }
             else if (expression is BinaryConditionalExpression bc)
             {
-                bool leftIsReg = IsVRegister(bc.LeftRegister);
+                bool leftIsReg = IsVRegister(bc.LeftHandOperand);
                 bool rightIsReg = IsVRegister(bc.RightHandOperand);
                 if (!leftIsReg && !rightIsReg)
                 {
@@ -503,7 +514,7 @@ namespace octo
                 }
                 if (!leftIsReg)
                 {
-                    VerifyRValue(bc.LeftRegister, true, true);
+                    VerifyRValue(bc.LeftHandOperand, true, true);
                 }
                 if (!rightIsReg)
                 {
