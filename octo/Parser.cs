@@ -11,6 +11,7 @@ namespace octo
     {
         private readonly List<Token> tokens = tokens;
         private int pos = 0;
+        private bool inLoop = false;
 
         public Statement[] Parse()
         {
@@ -141,6 +142,10 @@ namespace octo
                     pos--;
                     return ParseLoop();
                 case "while":
+                    if (!inLoop)
+                    {
+                        throw new ParseException(tokens[pos], "while not allowed outside a loop");
+                    }
                     pos--;
                     return ParseWhileStatement();
             }
@@ -738,7 +743,9 @@ namespace octo
                 return ExpectNewlineAndReturn(new LoopStatement(t, []));
             }
             Expect(TokenKind.NEWLINE);
+            inLoop = true;
             Statement[] body = ParseStatementsUntilKeyword("again");
+            inLoop = false;
             Expect(TokenKind.NEWLINE);
             return new LoopStatement(t, body);
         }
@@ -804,7 +811,8 @@ namespace octo
 
         private NamedReference ParseName()
         {
-            if (tokens[pos].Kind == TokenKind.NAME)
+            if (tokens[pos].Kind == TokenKind.NAME ||
+                tokens[pos].Kind == TokenKind.CONSTANT)
             {
                 if (tokens[pos].Value != null)
                 {
