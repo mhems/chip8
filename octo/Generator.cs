@@ -20,13 +20,13 @@ namespace octo
         };
         private readonly Statement[] statements = statements;
         private readonly Dictionary <string, ushort> addresses = [];
+        private readonly List<byte> program = [];
+        private readonly Dictionary<string, HashSet<int>> backpatches = [];
+        private readonly Stack<HashSet<int>> whileStack = [];
         private ushort pos = 0;
         private ushort address = Chip8.PROGRAM_START_ADDRESS;
         private byte unpack_hi = 0;
         private byte unpack_lo = 1;
-        private readonly List<byte> program = [];
-        private readonly Dictionary<string, HashSet<int>> backpatches = [];
-        private readonly Stack<HashSet<int>> whileStack = [];
 
         public byte[] Generate()
         {
@@ -86,7 +86,6 @@ namespace octo
             }
             else if (directive is LabelDeclaration ld)
             {
-                Trace.WriteLine($"label declaration: {ld.Name}");
                 addresses[ld.Name] = address;
                 if (backpatches.TryGetValue(ld.Name, out HashSet<int> set))
                 {
@@ -125,6 +124,10 @@ namespace octo
             {
                 ushort target = GetShort(od.Expression, 12);
                 ushort roundedTarget = (ushort)(target & ~1);
+                if (address % 2 == 1)
+                {
+                    GenerateByte(0);
+                }
                 while (address < roundedTarget)
                 {
                     GenerateData(0);
@@ -454,10 +457,27 @@ namespace octo
             {
                 throw new AnalysisException("target resolved to greater than 12 bits");
             }
-            if (value != 0x1000 &&
-                value != 0x2000 &&
-                value != 0xA000 &&
-                value != 0xB000)
+            if ((value & 0xF000) == 0x6000)
+            {
+                byte x = (byte)((value >> 8) & 0x000F);
+                if (x == unpack_hi)
+                {
+                    program[pos + 1] = (byte)(address >> 8);
+                }
+                else if (x == unpack_lo)
+                {
+                    program[pos + 1] = (byte)(address & 0xFF);
+                }
+                else
+                {
+                    throw new AnalysisException($"cannot backpatch a SETI that isn't an unpack");
+                }
+                
+            }
+            else if (value != 0x1000 &&
+                     value != 0x2000 &&
+                     value != 0xA000 &&
+                     value != 0xB000)
             {
                 throw new AnalysisException($"cannot backpatch instruction 0x{value:x}");
             }
@@ -551,7 +571,7 @@ namespace octo
             ushort masked = (ushort)(number & ((1 << numBits) - 1));
             if (number != masked)
             {
-                //throw new AnalysisException(value, $"expected at most {numBits}-bit value");
+                // throw new AnalysisException(value, $"expected at most {numBits}-bit value");
             }
             return masked;
         }
