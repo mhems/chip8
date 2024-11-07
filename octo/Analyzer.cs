@@ -259,7 +259,8 @@ namespace octo
                 else
                 {
                     VerifyNameExistsInContext(ma.Name, true);
-                    ma.Resolve(ResolveNamedReference(ma.Name, true));
+                    NamedReference nr = ma.Name;
+                    ma.Resolve(ResolveNamedReference(nr, true));
                 }
             }
             else if (assignment is MemoryIncrementAssignment mia)
@@ -492,6 +493,7 @@ namespace octo
             {
                 throw new AnalysisException(statement, "control flow statement not recognized");
             }
+            analyzedStatements.Add(statement);
         }
 
         private void AnalyzeCondition(ConditionalExpression expression)
@@ -730,8 +732,11 @@ namespace octo
             }
             else if (labels.Contains(@ref.Name))
             {
+                Trace.WriteLine($"resolving {@ref} to label");
                 @ref.ResolveToLabel();
-                return @ref;
+                NamedReference r = new(@ref.FirstToken, @ref.Name);
+                r.ResolveToLabel();
+                return r;
             }
             else if (calcs.TryGetValue(@ref.Name, out CalculationExpression expr))
             {
@@ -899,7 +904,7 @@ namespace octo
                 
                 foreach (Statement statement in def.Body)
                 {
-                    AnalyzeUnknownStatement(statement);
+                    AnalyzeUnknownStatement(statement.DeepCopy() as Statement);
                 }
 
                 currentMacro = null;
@@ -939,7 +944,7 @@ namespace octo
 
                     foreach (Statement statement in sd.Body)
                     {
-                        AnalyzeUnknownStatement(statement);
+                        AnalyzeUnknownStatement(statement.DeepCopy() as Statement);
                     }
 
                     currentMacro = null;

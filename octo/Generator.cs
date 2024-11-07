@@ -86,6 +86,7 @@ namespace octo
             }
             else if (directive is LabelDeclaration ld)
             {
+                Trace.WriteLine($"generating label {ld.Name}");
                 addresses[ld.Name] = address;
                 if (backpatches.TryGetValue(ld.Name, out HashSet<int> set))
                 {
@@ -452,6 +453,7 @@ namespace octo
 
         private void Backpatch(ushort address, int pos)
         {
+            Trace.WriteLine($"backpatching address 0x{address:X} at {pos}");
             ushort value = (ushort)((program[pos] << 8) | program[pos + 1]);
             if (address > 0x0fff)
             {
@@ -487,6 +489,7 @@ namespace octo
 
         private void CreateBackpatch(string name, int pos)
         {
+            Trace.WriteLine($"creating backpatch for {name} at {pos}");
             if (backpatches.TryGetValue(name, out HashSet<int> set))
             {
                 set.Add(pos);
@@ -699,15 +702,11 @@ namespace octo
 
                         throw new AnalysisException(name, $"unknown label {name.Name.Name}");
                     }
-                    else if (@ref.Value != null)
-                    {
-                        return @ref.Value.Value;
-                    }
                     else if (@ref.Expression != null)
                     {
                         return Interpret(@ref.Expression);
                     }
-                    else if (@ref.Constant)
+                    else
                     {
                         return name.Name.Name switch
                         {
