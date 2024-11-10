@@ -1,8 +1,4 @@
-﻿using System.Diagnostics;
-using System.Diagnostics.Tracing;
-using System.Security.Cryptography;
-using System.Text.RegularExpressions;
-using System.Xml.Linq;
+﻿using System.Text.RegularExpressions;
 
 namespace octo
 {
@@ -70,27 +66,27 @@ namespace octo
             }
         }
 
-        private void AnalyzeUnknownStatement(Statement statement)
+        private Statement AnalyzeUnknownStatement(Statement statement, bool emit = true)
         {
             if (statement is Directive d)
             {
-                AnalyzeDirective(d);
+                return AnalyzeDirective(d, emit);
             }
             else if (statement is Assignment a)
             {
-                AnalyzeAssignment(a);
+                return AnalyzeAssignment(a, emit);
             }
             else if (statement is ControlFlowStatement c)
             {
-                AnalyzeControlFlowStatement(c);
+                return AnalyzeControlFlowStatement(c, emit);
             }
             else
             {
-                AnalyzeStatement(statement);
+                return AnalyzeStatement(statement, emit);
             }
         }
  
-        private void AnalyzeDirective(Directive directive)
+        private Directive AnalyzeDirective(Directive directive, bool emit)
         {
             bool reuse = true;
             if (directive is BreakpointDirective dd)
@@ -150,7 +146,7 @@ namespace octo
             else if (directive is NextDirective nd)
             {
                 VerifyNameUnique(nd, nd.Label, allowLabelDuplicates:true);
-                AnalyzeUnknownStatement(nd.Statement);
+                nd.Statement = AnalyzeUnknownStatement(nd.Statement, false);
             }
             else if (directive is OrgDirective od)
             {
@@ -218,13 +214,15 @@ namespace octo
                 throw new AnalysisException(directive, "unknown directive sub-type");
             }
 
-            if (reuse)
+            if (reuse && emit)
             {
                 analyzedStatements.Add(directive);
             }
+
+            return directive;
         }
 
-        private void AnalyzeAssignment(Assignment assignment)
+        private Assignment AnalyzeAssignment(Assignment assignment, bool emit)
         {
             bool reuse = true;
             GenericRegisterReference tmp;
@@ -348,20 +346,28 @@ namespace octo
                     ((ImmediateAssignment)disambiguatedAssignment).ResolveDestination(tmp);
                     ((ImmediateAssignment)disambiguatedAssignment).ResolveArgument(value);
                 }
-                analyzedStatements.Add(disambiguatedAssignment);
+
+                if (emit)
+                {
+                    analyzedStatements.Add(disambiguatedAssignment);
+                }
+
+                return disambiguatedAssignment;
             }
             else
             {
                 throw new AnalysisException(assignment, "unknown assignment sub-type");
             }
             
-            if (reuse)
+            if (reuse && emit)
             {
                 analyzedStatements.Add(assignment);
             }
+
+            return assignment;
         }
 
-        private void AnalyzeStatement(Statement statement)
+        private Statement AnalyzeStatement(Statement statement, bool emit)
         {
             bool reuse = true;
             GenericRegisterReference tmp;
@@ -420,7 +426,7 @@ namespace octo
             else if (statement is MacroInvocation mi)
             {
                 reuse = false;
-                VerifyMacro(mi, mi.MacroName, mi.Arguments);
+                VerifyMacro(mi, mi.MacroName, mi.Arguments, emit);
             }
             else if (statement is AmbiguousCall ac)
             {
@@ -429,7 +435,12 @@ namespace octo
                 {
                     NamedReference @ref = new(ac.FirstToken, ac.TargetName);
                     @ref.ResolveToLabel();
-                    analyzedStatements.Add(new FunctionCallByName(ac.FirstToken, @ref));
+                    FunctionCallByName fcn = new(ac.FirstToken, @ref);
+                    if (emit)
+                    {
+                        analyzedStatements.Add(fcn);
+                    }
+                    return fcn;
                 }
                 else if (stringDirectives.ContainsKey(ac.TargetName))
                 {
@@ -437,7 +448,7 @@ namespace octo
                 }
                 else if (macroNames.ContainsKey(ac.TargetName))
                 {
-                    VerifyMacro(ac, ac.TargetName, []);
+                    VerifyMacro(ac, ac.TargetName, [], emit); // TODO this won't hold
                 }
                 else
                 {
@@ -449,51 +460,48 @@ namespace octo
                 
             }
 
-            if (reuse)
+            if (reuse && emit)
             {
                 analyzedStatements.Add(statement);
             }
+
+            return statement;
         }
 
-        private void AnalyzeControlFlowStatement(ControlFlowStatement statement)
+        private ControlFlowStatement AnalyzeControlFlowStatement(ControlFlowStatement statement, bool emit)
         {
             if (statement is IfStatement ifStatement)
             {
                 AnalyzeCondition(ifStatement.Condition);
                 if (ifStatement.Body != null)
                 {
-                    AnalyzeUnknownStatement(ifStatement.Body);
+                    ifStatement.Body = AnalyzeUnknownStatement(ifStatement.Body, false);
                 }
             }
             else if (statement is IfElseBlock ifElseBlock)
             {
                 AnalyzeCondition(ifElseBlock.Condition);
-                foreach (Statement s in ifElseBlock.ThenBody)
-                {
-                    AnalyzeUnknownStatement(s);
-                }
-                foreach (Statement s in ifElseBlock.ElseBody)
-                {
-                    AnalyzeUnknownStatement(s);
-                }
+                ifElseBlock.ThenBody = AnalyzeCollection(ifElseBlock.ThenBody, false);
+                ifElseBlock.ElseBody = AnalyzeCollection(ifElseBlock.ElseBody, false);
             }
             else if (statement is LoopStatement loopStatement)
             {
-                foreach (Statement s in loopStatement.Body)
-                {
-                    AnalyzeUnknownStatement(s);
-                }
+                loopStatement.Body = AnalyzeCollection(loopStatement.Body, false);
             }
             else if (statement is WhileStatement whileStatement)
             {
                 AnalyzeCondition(whileStatement.Condition);
-                AnalyzeUnknownStatement(whileStatement.Statement);
+                whileStatement.Statement = AnalyzeUnknownStatement(whileStatement.Statement, false);
             }
             else
             {
                 throw new AnalysisException(statement, "control flow statement not recognized");
             }
-            analyzedStatements.Add(statement);
+            if (emit)
+            {
+                analyzedStatements.Add(statement);
+            }
+            return statement;
         }
 
         private void AnalyzeCondition(ConditionalExpression expression)
@@ -732,7 +740,6 @@ namespace octo
             }
             else if (labels.Contains(@ref.Name))
             {
-                Trace.WriteLine($"resolving {@ref} to label");
                 @ref.ResolveToLabel();
                 NamedReference r = new(@ref.FirstToken, @ref.Name);
                 r.ResolveToLabel();
@@ -884,7 +891,7 @@ namespace octo
             }
         }
 
-        private void VerifyMacro(AstNode node, string macroName, string[] suppliedArgs)
+        private void VerifyMacro(AstNode node, string macroName, string[] suppliedArgs, bool emit)
         {
             if (macroNames.TryGetValue(macroName, out MacroDefinition def))
             {
@@ -901,11 +908,8 @@ namespace octo
                 }
                 macroSubstitutions.AddFirst(currentScope);
                 currentMacro = macroName;
-                
-                foreach (Statement statement in def.Body)
-                {
-                    AnalyzeUnknownStatement(statement.DeepCopy() as Statement);
-                }
+
+                AnalyzeCollection(def.Body, emit);
 
                 currentMacro = null;
                 macroSubstitutions.RemoveFirst();
@@ -942,10 +946,7 @@ namespace octo
                     currentMacro = macroName;
                     currentStringMode = macroName;
 
-                    foreach (Statement statement in sd.Body)
-                    {
-                        AnalyzeUnknownStatement(statement.DeepCopy() as Statement);
-                    }
+                    AnalyzeCollection(sd.Body, emit);
 
                     currentMacro = null;
                     macroSubstitutions.RemoveFirst();
@@ -955,6 +956,17 @@ namespace octo
             {
                 throw new AnalysisException(node, $"{macroName} does not name a declared macro");
             }
+        }
+
+        public Statement[] AnalyzeCollection(Statement[] statements, bool emit = true)
+        {
+            List<Statement> localStatements = [];
+            for (int i = 0; i < statements.Length; i++)
+            {
+                Statement analyzedStatement = AnalyzeUnknownStatement(statements[i].DeepCopy() as Statement, emit);
+                localStatements.Add(analyzedStatement);
+            }
+            return localStatements.ToArray();
         }
 
         public bool TryGetMacroSubstitution(string param, out string value)

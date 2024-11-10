@@ -1,5 +1,4 @@
 ﻿using emulator;
-using System.Diagnostics;
 using static octo.Analyzer;
 using static octo.CalculationBinaryOperation;
 using static octo.CalculationUnaryOperation;
@@ -86,7 +85,6 @@ namespace octo
             }
             else if (directive is LabelDeclaration ld)
             {
-                Trace.WriteLine($"generating label {ld.Name}");
                 addresses[ld.Name] = address;
                 if (backpatches.TryGetValue(ld.Name, out HashSet<int> set))
                 {
@@ -113,8 +111,9 @@ namespace octo
                 }
                 byte hi = (byte)(value >> 8);
                 byte lo = (byte)(value & 0xFF);
-                GenerateInstruction("SETI", [unpack_lo, lo]);
                 GenerateInstruction("SETI", [unpack_hi, hi]);
+                GetShort(ud.ResolvedName, 16);
+                GenerateInstruction("SETI", [unpack_lo, lo]);
             }
             else if (directive is NextDirective nd)
             {
@@ -262,14 +261,21 @@ namespace octo
                 {
                     GenerateUnknownStatement(inner);
                 }
-                int end_of_if_pos = pos;
-                GenerateInstruction("JMPI", [0x0]);
-                Backpatch(address, start_pos);
-                foreach (Statement inner in ifElseBlock.ElseBody)
+                if (ifElseBlock.ElseBody.Length == 0)
                 {
-                    GenerateUnknownStatement(inner);
+                    Backpatch(address, start_pos);
                 }
-                Backpatch(address, end_of_if_pos);
+                else
+                {
+                    int end_of_if_pos = pos;
+                    GenerateInstruction("JMPI", [0x0]);
+                    Backpatch(address, start_pos);
+                    foreach (Statement inner in ifElseBlock.ElseBody)
+                    {
+                        GenerateUnknownStatement(inner);
+                    }
+                    Backpatch(address, end_of_if_pos);
+                }
             }
             else if (statement is LoopStatement loopStatement)
             {
@@ -301,7 +307,12 @@ namespace octo
         {
             if (expression is KeystrokeCondition kc)
             {
-                GenerateInstruction(kc.KeyPressed ? "SKEQ" : "SKNE",
+                bool pressed = !kc.KeyPressed;
+                if (negate)
+                {
+                    pressed = !pressed;
+                }
+                GenerateInstruction(pressed ? "SKEQ" : "SKNE",
                                     [GetRegisterIndex(kc.LeftHandOperand)]);
             }
             else if (expression is BinaryConditionalExpression bce)
@@ -453,7 +464,6 @@ namespace octo
 
         private void Backpatch(ushort address, int pos)
         {
-            Trace.WriteLine($"backpatching address 0x{address:X} at {pos}");
             ushort value = (ushort)((program[pos] << 8) | program[pos + 1]);
             if (address > 0x0fff)
             {
@@ -464,7 +474,7 @@ namespace octo
                 byte x = (byte)((value >> 8) & 0x000F);
                 if (x == unpack_hi)
                 {
-                    program[pos + 1] = (byte)(address >> 8);
+                    program[pos + 1] |= (byte)(address >> 8);
                 }
                 else if (x == unpack_lo)
                 {
@@ -474,7 +484,7 @@ namespace octo
                 {
                     throw new AnalysisException($"cannot backpatch a SETI that isn't an unpack");
                 }
-                
+                return;
             }
             else if (value != 0x1000 &&
                      value != 0x2000 &&
@@ -489,7 +499,6 @@ namespace octo
 
         private void CreateBackpatch(string name, int pos)
         {
-            Trace.WriteLine($"creating backpatch for {name} at {pos}");
             if (backpatches.TryGetValue(name, out HashSet<int> set))
             {
                 set.Add(pos);

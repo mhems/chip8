@@ -1,12 +1,4 @@
-﻿using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System.Diagnostics;
-using System.Reflection.Metadata.Ecma335;
-using System.Runtime.Serialization.Formatters.Binary;
-using System.Security.Cryptography;
-using System.Text;
-using System.Xml.Linq;
-using static octo.Lexer;
+﻿using static octo.Lexer;
 
 namespace octo
 {
@@ -303,7 +295,6 @@ namespace octo
         public void Resolve(RValue value)
         {
             ResolvedValue = value;
-            Trace.WriteLine($"MA resolving: {this}: value {value.GetHashCode()}, {ResolvedValue.GetHashCode()}");
         }
 
         public override MemoryAssignment DeepCopy()
@@ -397,8 +388,8 @@ namespace octo
         GenericRegisterReference src,
         RegisterAssignment.AssignmentOperator op) : Assignment(token)
     {
-        public GenericRegisterReference SourceRegister { get; private set; } = dest;
-        public GenericRegisterReference DestinationRegister { get; private set; } = src;
+        public GenericRegisterReference SourceRegister { get; private set; } = src;
+        public GenericRegisterReference DestinationRegister { get; private set; } = dest;
         public AssignmentOperator Operator { get; } = op;
 
         public void ResolveDestination(GenericRegisterReference reg)
@@ -923,7 +914,7 @@ namespace octo
     public class NextDirective(Token token, string label, Statement s) : Directive(token)
     {
         public string Label { get; } = label;
-        public Statement Statement { get; } = s;
+        public Statement Statement { get; set; } = s;
 
         public override NextDirective DeepCopy()
         {
@@ -955,7 +946,7 @@ namespace octo
     {
         public string Name { get; } = name;
         public string[] Arguments { get; } = arguments;
-        public Statement[] Body { get; } = body;
+        public Statement[] Body { get; set; } = body;
 
         public override MacroDefinition DeepCopy()
         {
@@ -1079,7 +1070,7 @@ namespace octo
     {
         public string Name { get; } = name;
         public string Alphabet { get; } = alphabet;
-        public Statement[] Body { get; } = body;
+        public Statement[] Body { get; set; } = body;
 
         public override StringDirective DeepCopy()
         {
@@ -1199,7 +1190,7 @@ namespace octo
     public class IfStatement(Token token, ConditionalExpression expr, Statement? s = null) : ControlFlowStatement(token)
     {
         public ConditionalExpression Condition { get; } = expr;
-        public Statement? Body { get; } = s;
+        public Statement? Body { get; set; } = s;
 
         public override IfStatement DeepCopy()
         {
@@ -1220,8 +1211,8 @@ namespace octo
         ControlFlowStatement(token)
     {
         public ConditionalExpression Condition { get; } = expr;
-        public Statement[] ThenBody { get; } = thenBlock;
-        public Statement[] ElseBody { get; } = elseBlock;
+        public Statement[] ThenBody { get; set; } = thenBlock;
+        public Statement[] ElseBody { get; set; } = elseBlock;
 
         public override IfElseBlock DeepCopy()
         {
@@ -1246,7 +1237,7 @@ namespace octo
 
     public class LoopStatement(Token token, Statement[] body) : ControlFlowStatement(token)
     {
-        public Statement[] Body { get; } = body;
+        public Statement[] Body { get; set; } = body;
 
         public override LoopStatement DeepCopy()
         {
@@ -1267,7 +1258,7 @@ namespace octo
     public class WhileStatement(Token token, ConditionalExpression expr, Statement s) : ControlFlowStatement(token)
     {
         public ConditionalExpression Condition { get; } = expr;
-        public Statement Statement { get; } = s;
+        public Statement Statement { get; set; } = s;
 
         public override WhileStatement DeepCopy()
         {
